@@ -1,5 +1,6 @@
 ﻿"use client";
 import { type ReactNode } from "react";
+export { useStepActions, sovFieldCompleteness } from "./SubmissionTypes";
 import {
   Building2, ClipboardList, Target, Sparkles, Scale, Gavel, Send,
 } from "lucide-react";

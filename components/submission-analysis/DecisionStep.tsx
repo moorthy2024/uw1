@@ -1,4 +1,5 @@
 ﻿"use client";
+import { useSubmissionCtx } from "./SubmissionContext";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -10,17 +11,17 @@ import {
   CategorySummaryList, CategoryDetailView,
   STEP_STATUS_STYLE,
   type StepCategory, type StepStatus, type SummaryStat,
-} from "./step-detail-layout";
-import { PostDecisionSurvey } from "./FeedbackComponents";
-import { ActionBtn } from "./SubmissionHelpers";
-import { useStepActions } from "./SubmissionTypes";
+} from "../step-detail-layout";
+import { PostDecisionSurvey } from "../FeedbackComponents";
+import { ActionBtn } from "../SubmissionHelpers";
+import { useStepActions } from "../SubmissionTypes";
 import {
   type SubmissionMeta, type SubmissionExtras,
-} from "./SubmissionTypes";
-import { type SubmissionIndexEntry } from "./CustomerTable";
+} from "../SubmissionTypes";
+import { type SubmissionIndexEntry } from "../CustomerTable";
 import {
   deriveRecommendation, hazardBand, RECOMMENDATION_CONFIG,
-} from "./SubmissionHelpers";
+} from "../SubmissionHelpers";
 
 const INIT_PREMIUM = "$142,000";
 
@@ -101,9 +102,8 @@ function CommModal({ title, stage, account, to, toEmail, subject, initialBody, a
 }
 
 /* ── Step 5: Decision ── */
-export function DecisionStep({ meta, idx, extras }: {
-  meta: SubmissionMeta; idx: SubmissionIndexEntry; extras: SubmissionExtras;
-}) {
+export function DecisionStep() {
+  const { meta, idx, extras } = useSubmissionCtx();
   // Pre-set known outcomes for specific submissions
   const presetDecision: "quoted-won" | "quoted-lost" | "no-response" | null =
     meta.id === "SUB-2026-0851" ? "quoted-lost" : null;

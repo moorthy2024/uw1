@@ -5,6 +5,7 @@ import {
   Lock, UserCog,
   AlertTriangle, MapPin, Mail, Globe, FileText, Zap, SlidersHorizontal
 } from "lucide-react";
+import { CustomerGrid } from "./customer/CustomerGrid";
 
 interface CustomerTableProps {
   onSubmissionSelect?: (id: string) => void;
@@ -1242,47 +1243,13 @@ export function CustomerTable({
   // Compact card list for sidebar mode
   if (isCompressed) {
     return (
-      <div>
-        <div className="px-3 py-2 bg-[#F8FBFF] border-b border-[#E0E8FF]">
-          <input
-            type="text"
-            placeholder="Search…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full px-2.5 py-1.5 border border-[#E0E8FF] rounded-lg text-[12px] bg-white placeholder:text-[#C0CEDC] focus:outline-none focus:ring-1 focus:ring-[#0076BC]"
-          />
-        </div>
-        <div className="divide-y divide-[#EEF2FF]">
-          {sorted.map(sub => {
-            const isClickable = INTERACTIVE_ACCOUNTS.has(sub.account);
-            if (!isClickable) {
-              return (
-                <div key={sub.id} className="px-3 py-3 border-b border-[#EEF2FF] bg-[#F8FAFB] cursor-not-allowed">
-                  <div className="text-[12px] text-[#9BA8B8] leading-snug mb-0.5" style={{ fontWeight: 600 }}>{sub.account}</div>
-                  <div className="flex items-center gap-1 text-[10px] mb-1" style={{ color: "#B8C4D0" }}>
-                    <MapPin className="w-3 h-3 flex-shrink-0" />
-                    {sub.homeOffice}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <DataStatusBadge status={sub.dataStatus} />
-                  </div>
-                </div>
-              );
-            }
-            return (
-              <CompactSubmissionCard
-                key={sub.id}
-                sub={sub}
-                isSelected={sub.id === selectedId}
-                onClick={() => onSubmissionSelect?.(sub.id)}
-              />
-            );
-          })}
-          {sorted.length === 0 && (
-            <div className="px-4 py-8 text-center text-[12px] text-[#94A3B8]">No submissions match your search.</div>
-          )}
-        </div>
-      </div>
+      <CustomerGrid
+        sorted={sorted}
+        search={search}
+        onSearchChange={setSearch}
+        selectedId={selectedId}
+        onSubmissionSelect={onSubmissionSelect}
+      />
     );
   }
 

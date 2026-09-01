@@ -1,4 +1,5 @@
 ﻿"use client";
+import { useSubmissionCtx } from "./SubmissionContext";
 import { type ReactNode, useState, useRef, useEffect, useCallback, type Dispatch, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
@@ -11,18 +12,17 @@ import {
 import {
   StepShell, StepSummaryBand, PaneTitle,
   type StepStatus,
-} from "./step-detail-layout";
-import { ActionBtn, hazardBand, parseTIV, parsePaidK, fmtPaid, BAND_STYLE, parsePC } from "./SubmissionHelpers";
-import { useStepActions, type ActionItem } from "./SubmissionTypes";
-import { type SovLocation, type LossLocation } from "./SubmissionTypes";
+} from "../step-detail-layout";
+import { ActionBtn, hazardBand, parseTIV, parsePaidK, fmtPaid, BAND_STYLE, parsePC } from "../SubmissionHelpers";
+import { useStepActions, type ActionItem } from "../SubmissionTypes";
+import { type SovLocation, type LossLocation } from "../SubmissionTypes";
 import {
   type SubmissionMeta, type SubmissionExtras, type ClaimRecord,
-} from "./SubmissionTypes";
-import { type SubmissionIndexEntry } from "./CustomerTable";
-import {
-  buildFieldCatalog, EXPECTED_DOCS, DOMAIN_ORDER,
-  type CatalogField, type CatalogDocRef, type FieldKind,
-} from "./ingestion-field-catalog";
+} from "../SubmissionTypes";
+import { type SubmissionIndexEntry } from "../CustomerTable";
+import { type CatalogField, type CatalogDocRef, type FieldKind, CRITICALITY_STYLE } from "./types";
+import { EXPECTED_DOCS, DOMAIN_ORDER } from "./mock-data";
+import { useIngestionFields } from "./useSubmission";
 
 /* ── Step 1: Ingestion ── */
 /* ⓘ icon that opens a light-background tooltip showing the field's expected format.
@@ -1386,10 +1386,10 @@ function DocDropdown({ options, value, onChange }: {
   );
 }
 
-export function IngestionStep({ meta, idx, extras, onProceed }: {
-  meta: SubmissionMeta; idx: SubmissionIndexEntry; extras: SubmissionExtras; onProceed: () => void;
-}) {
-  const fields = buildFieldCatalog(meta, idx, extras);
+export function IngestionStep({ onProceed }: { onProceed: () => void }) {
+  const { meta, idx, extras } = useSubmissionCtx();
+  const { fields: rawFields } = useIngestionFields(meta.id);
+  const fields = rawFields ?? [];
 
   /* Four-level hierarchy: expected document → domain → entity/sub-entity → field */
   const docsInOrder = EXPECTED_DOCS.filter(d => fields.some(f => f.doc === d));
