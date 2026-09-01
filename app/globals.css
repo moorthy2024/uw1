@@ -1,0 +1,43 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+}
+
+body {
+  font-family: var(--font-inter, system-ui, sans-serif);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* ── Custom scrollbar — step pane ─────────────────────────────── */
+.step-scroll-pane {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.2s;
+}
+.step-scroll-pane.scrolling {
+  scrollbar-color: rgba(0, 118, 188, 0.4) transparent;
+}
+.step-scroll-pane::-webkit-scrollbar {
+  width: 4px;
+}
+.step-scroll-pane::-webkit-scrollbar-track {
+  background: transparent;
+}
+.step-scroll-pane::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 99px;
+  transition: background-color 0.2s ease;
+}
+.step-scroll-pane.scrolling::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 118, 188, 0.4);
+}
