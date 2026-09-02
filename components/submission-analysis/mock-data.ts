@@ -959,17 +959,19 @@ export function buildFieldCatalog(
   const state = extras.sov.stats.topState;
   const ref = (doc: string, page: number, excerpt: string, label: string): CatalogDocRef =>
     ({ doc, page, excerpt, highlightLabel: label });
+  // Heartland demo: first 4 fields each cite a different document type
+  const isHeartland = meta.id === "SUB-2026-1103";
 
   return [
     /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Application â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     { doc: "Application", domain: "Party & Customer", subEntity: "Insured",
       label: "Named insured (legal name)", detail: "Account Name", critical: "Yes", kind: "text",
       value: meta.namedInsured, confidence: 98,
-      docRef: ref("Application", 1, "Named Insured field", "Named Insured") },
+      docRef: isHeartland ? ref("Risk Engineering Report", 1, "Named Insured on survey letterhead", "Named Insured") : ref("Application", 1, "Named Insured field", "Named Insured") },
     { doc: "Application", domain: "Party & Customer", subEntity: "Insured",
       label: "Legal entity type", detail: "LLC, Corp, Partnership, Trust", critical: "Yes", kind: "select",
       value: "Corporation", confidence: 93, options: ["LLC", "Corporation", "Partnership", "Trust"],
-      docRef: ref("Application", 1, "Entity type declaration", "Legal Entity Type") },
+      docRef: isHeartland ? ref("Statement of Values", 1, "Entity type in SOV header row", "Legal Entity Type") : ref("Application", 1, "Entity type declaration", "Legal Entity Type") },
     { doc: "Application", domain: "Party & Customer", subEntity: "Insured",
       label: "NAICS code (Industry Level 3 â€” Salesforce)", detail: "Industry Code e.g. Agriculture, Construction, Manufacturing", critical: "Yes", kind: "text",
       value: meta.naics, confidence: 95,
@@ -977,7 +979,7 @@ export function buildFieldCatalog(
     { doc: "Application", domain: "Party & Customer", subEntity: "Insured",
       label: "Appetite ID (4-digit, from Hazard Grade tool)", detail: "4-digit row ID from QBE's Hazard Grade tool for the occupancy/SIC combination; sets appetite and capacity", critical: "Yes", kind: "numeric",
       value: "4182", confidence: 86,
-      docRef: ref("Application", 1, "Occupancy / SIC combination", "Appetite ID") },
+      docRef: isHeartland ? ref("Site Photos", 1, "Aerial photo — facility occupancy classification", "Appetite ID") : ref("Application", 1, "Occupancy / SIC combination", "Appetite ID") },
     { doc: "Application", domain: "Party & Customer", subEntity: "Insured",
       label: "ATC occupancy code", detail: "Classifies buildings by primary use e.g. Apartment, Church, Dwellings", critical: "Yes", kind: "numeric",
       value: "48", confidence: 89,

@@ -1,14 +1,15 @@
 ﻿"use client";
 import { useSubmissionCtx } from "./SubmissionContext";
-import { type ReactNode, useState, useRef, useEffect, useCallback, type Dispatch, type SetStateAction } from "react";
+import { type ReactNode, useState, useRef, useEffect, useCallback, useMemo, type Dispatch, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { toast } from "sonner";
 import {
   FileText, X, Mail, ChevronRight, ChevronLeft, ChevronDown,
   AlertTriangle, Download, FileSearch, Info, Search,
-  RefreshCw, Paperclip, Check, ExternalLink,
+  RefreshCw, Paperclip, Check, ExternalLink, Camera,
 } from "lucide-react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   StepShell, StepSummaryBand, PaneTitle,
   type StepStatus,
@@ -20,9 +21,11 @@ import {
   type SubmissionMeta, type SubmissionExtras, type ClaimRecord,
 } from "../SubmissionTypes";
 import { type SubmissionIndexEntry } from "../CustomerTable";
-import { type CatalogField, type CatalogDocRef, type FieldKind, CRITICALITY_STYLE } from "./types";
+import { type CatalogField, type CatalogDocRef, type FieldKind, type DocType, type PdfPage, CRITICALITY_STYLE } from "./types";
 import { EXPECTED_DOCS, DOMAIN_ORDER } from "./mock-data";
 import { useIngestionFields } from "./useSubmission";
+import { useDocumentPage } from "./useDocumentPage";
+import { useFieldStream } from "./useFieldStream";
 
 /* ── Step 1: Ingestion ── */
 /* ⓘ icon that opens a light-background tooltip showing the field's expected format.
@@ -62,8 +65,6 @@ function FieldInfoTooltip({ detail }: { detail: string }) {
 }
 
 /* Synthetic PDF page content per document */
-interface PdfPage { title: string; pageCount: number; content: (highlight: string) => ReactNode }
-
 function makePdfPages(meta: SubmissionMeta, idx: SubmissionIndexEntry, extras: SubmissionExtras): Record<string, PdfPage> {
   const broker = meta.broker;
   const ins    = meta.namedInsured;
@@ -128,9 +129,10 @@ function makePdfPages(meta: SubmissionMeta, idx: SubmissionIndexEntry, extras: S
             <div className="text-[13px]" style={{ fontWeight: 700 }}>STATEMENT OF VALUES</div>
             <div className="text-[10px] text-[#6B7280]">{ins} · Policy Year {inc.split(" ").pop()}</div>
           </div>
-          <Row label="Total Insured Value" val={tiv} hl={hl} match="Total Insured Value" />
-          <Row label="Territory"          val={meta.territory}  hl={hl} match="Territory" />
-          <Row label="Location Count"     val={meta.locations}  hl={hl} match="Location Count" />
+          <Row label="Legal Entity Type"   val="Corporation"      hl={hl} match="Legal Entity Type" />
+          <Row label="Total Insured Value" val={tiv}             hl={hl} match="Total Insured Value" />
+          <Row label="Territory"           val={meta.territory}  hl={hl} match="Territory" />
+          <Row label="Location Count"      val={meta.locations}  hl={hl} match="Location Count" />
           <div className="mt-2 pt-2 border-t border-[#F0EFEC] text-[10px] uppercase tracking-wide text-[#9B9B98]" style={{ fontWeight: 700 }}>Location Summary</div>
           <table className="w-full text-[10px] mt-1">
             <thead><tr className="border-b border-[#E8E6E1]">
@@ -196,8 +198,9 @@ function makePdfPages(meta: SubmissionMeta, idx: SubmissionIndexEntry, extras: S
             <div className="text-[13px]" style={{ fontWeight: 700 }}>RISK ENGINEERING REPORT</div>
             <div className="text-[10px] text-[#6B7280]">{ins} · Survey Date: 14 Feb 2026</div>
           </div>
-          <Row label="Overall Hazard Score" val={`${idx.hazardScore}/100`} hl={hl} match="Hazard Score" />
-          <Row label="Success Propensity"       val={`${idx.successPropensity}%`}  hl={hl} match="Success Propensity" />
+          <Row label="Named Insured"        val={ins}                            hl={hl} match="Named Insured" />
+          <Row label="Overall Hazard Score" val={`${idx.hazardScore}/100`}       hl={hl} match="Hazard Score" />
+          <Row label="Success Propensity"   val={`${idx.successPropensity}%`}    hl={hl} match="Success Propensity" />
           <p className="text-[#4B5563]">{extras.sov.dataCleansingNote}</p>
           <div className="mt-2 pt-2 border-t border-[#F0EFEC] text-[10px] uppercase tracking-wide text-[#9B9B98]" style={{ fontWeight: 700 }}>Protection Summary</div>
           {(extras.sov.locations ?? []).slice(0, 4).map((loc, i) => (
@@ -209,6 +212,57 @@ function makePdfPages(meta: SubmissionMeta, idx: SubmissionIndexEntry, extras: S
           <div className="mt-2 text-[10px] text-amber-700 italic border border-amber-200 bg-amber-50 rounded p-2">{extras.documents.find(d => d.name === "Risk Engineering Report")?.reviewReason ?? "No review flag."}</div>
         </div>
       ),
+    },
+    "Site Photos": {
+      title: "Site Photographs — Survey Feb 2026",
+      pageCount: 4,
+      content: (hl) => {
+        const photos = [
+          { id: "P1", label: "Main Office Building — Ext.", desc: "3-story brick, Sprinklered",   bg: "#B0C4DE" },
+          { id: "P2", label: "Manufacturing Bay A",          desc: "Steel frame, open floor plan",  bg: "#C8D8B0" },
+          { id: "P3", label: "Storage Warehouse #1",         desc: "Sprinklered, 40,000 sq ft",     bg: "#D8C8B0" },
+          { id: "P4", label: "Aerial — Campus Overview",     desc: "Primary facility, ~80 acres",   bg: "#C0B8D8" },
+        ];
+        return (
+          <div className="space-y-2">
+            <div className="text-[10px] text-[#6B7280] mb-2">Survey photos · Heartland Industrial Holdings · 14 Feb 2026</div>
+            <div className="grid grid-cols-2 gap-2">
+              {photos.map((photo, i) => {
+                const isCited = !!hl && i === 0;
+                return (
+                  <div key={photo.id} className={`rounded overflow-hidden ${isCited ? "ring-2 ring-amber-400 ring-offset-1 shadow-lg" : "border border-[#E8E6E1]"}`}>
+                    <div className="relative" style={{ height: 72, backgroundColor: photo.bg }}>
+                      <svg width="100%" height="72" viewBox="0 0 120 72" preserveAspectRatio="none">
+                        <rect width="120" height="72" fill={photo.bg} />
+                        <rect x="8" y="12" width="104" height="48" rx="2" fill="white" fillOpacity="0.12" />
+                        <rect x="18" y="20" width="36" height="28" rx="1" fill="white" fillOpacity="0.22" />
+                        <rect x="66" y="20" width="36" height="28" rx="1" fill="white" fillOpacity="0.22" />
+                        <rect x="18" y="52" width="84" height="4" rx="1" fill="white" fillOpacity="0.10" />
+                      </svg>
+                      {isCited && (
+                        <>
+                          <div className="absolute inset-0 bg-amber-400 opacity-20 pointer-events-none" />
+                          <div className="absolute top-1 right-1 bg-amber-400 text-white text-[8px] px-1.5 py-0.5 rounded font-bold leading-none shadow">CITED</div>
+                        </>
+                      )}
+                      <div className="absolute bottom-1 left-1 bg-black bg-opacity-50 text-white text-[7px] px-1 py-0.5 rounded leading-none">{photo.id}</div>
+                    </div>
+                    <div className={`px-1.5 py-1 ${isCited ? "bg-amber-50" : "bg-white"}`}>
+                      <div className={`text-[9px] font-semibold truncate ${isCited ? "text-amber-900" : "text-[#2D2D2D]"}`}>{photo.label}</div>
+                      <div className="text-[8px] text-[#9B9B98]">{photo.desc}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {hl && (
+              <div className="mt-2 px-2 py-1.5 bg-amber-50 border border-amber-200 rounded text-[9px] text-amber-800">
+                <span className="font-semibold">Citation:</span> {hl} — photo P1 confirms Industrial / Manufacturing occupancy classification
+              </div>
+            )}
+          </div>
+        );
+      },
     },
     "Primary Policy": {
       title: "Primary / Expiring Policy",
@@ -261,12 +315,15 @@ function CitationModal({ docRef, citNum, pdfPages, meta, onClose }: {
   onClose: () => void;
 }) {
   const [page, setPage] = useState(docRef.page);
-  const WORD_DOCS = new Set(["Application", "Coverage Request", "Primary Policy"]);
+  const WORD_DOCS  = new Set(["Application", "Coverage Request", "Primary Policy"]);
   const EXCEL_DOCS = new Set(["Statement of Values", "Loss History"]);
+  const IMAGE_DOCS = new Set(["Site Photos"]);
   const docData = pdfPages[docRef.doc];
   const pageCount = docData?.pageCount ?? 1;
 
-  const docTypeCfg = EXCEL_DOCS.has(docRef.doc)
+  const docTypeCfg = IMAGE_DOCS.has(docRef.doc)
+    ? { label: "IMG",  bg: "#374151", ext: ".jpg" }
+    : EXCEL_DOCS.has(docRef.doc)
     ? { label: "XLSX", bg: "#217346", ext: ".xlsx" }
     : WORD_DOCS.has(docRef.doc)
     ? { label: "DOCX", bg: "#2B579A", ext: ".docx" }
@@ -285,6 +342,23 @@ function CitationModal({ docRef, citNum, pdfPages, meta, onClose }: {
           <div className="text-center text-[#9B9B98] text-[12px]">
             <FileText className="w-10 h-10 mx-auto mb-3 opacity-30" />
             Document not yet received
+          </div>
+        </div>
+      );
+    }
+    if (IMAGE_DOCS.has(docRef.doc)) {
+      return (
+        <div className="flex-1 flex flex-col bg-[#1C1C1C] overflow-hidden">
+          <div className="flex-shrink-0 px-3 py-1 bg-[#111] flex items-center gap-2">
+            <span className="text-[9px] text-white opacity-50">4 of 4 photos · Survey 14 Feb 2026</span>
+          </div>
+          <div className="flex-1 overflow-auto p-3">
+            {!docData ? (
+              <div className="text-center py-12">
+                <Camera className="w-8 h-8 mx-auto mb-2 text-white opacity-20" />
+                <div className="text-[11px] text-[#9B9B98]">Photos not yet received</div>
+              </div>
+            ) : docData.content(docRef.highlightLabel)}
           </div>
         </div>
       );
@@ -1417,13 +1491,26 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
   const [showFollowUp, setShowFollowUp] = useState(false);
   const handleOpenFollowUp = useCallback(() => setShowFollowUp(true), []);
 
-  const pdfPages = makePdfPages(meta, idx, extras);
+  // Lazy-initialize pdfPages — computed once per submission, cached in ref
+  const pdfPagesRef = useRef<Record<string, PdfPage> | null>(null);
+  if (!pdfPagesRef.current) pdfPagesRef.current = makePdfPages(meta, idx, extras);
+  const getPdfPages = () => pdfPagesRef.current!;
 
-  const openCitation = (ref: CatalogDocRef) => {
+  // Active document type — set when a citation is opened
+  const [activeDocType, setActiveDocType] = useState<DocType | null>(null);
+
+  const openCitation = useCallback((ref: CatalogDocRef) => {
     setPreviewDoc(ref.doc);
     setPreviewPage(ref.page);
     setPreviewHighlight(ref.highlightLabel);
-  };
+    if (ref.docType) setActiveDocType(ref.docType);
+  }, []);
+
+  // On-demand document page — loads lazily, cached per doc
+  const { docPage, docLoading } = useDocumentPage(meta.id, previewDoc, getPdfPages);
+
+  // Field streaming hook — ready for SSE; currently mirrors full field list
+  const { isStreaming } = useFieldStream(meta.id, fields);
 
   const updateValue = (key: string, val: string) => {
     setValues(prev => ({ ...prev, [key]: val }));
@@ -1643,13 +1730,59 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
 
   const hasIngestionFilter = false;
 
+  // ── Virtual scroll: flatten domain→subEntity→field hierarchy for active doc ──
+  type FlatItem =
+    | { kind: "domain";    domain: string }
+    | { kind: "subentity"; domain: string; subEntity: string }
+    | { kind: "field";     field: CatalogField; domain: string; subEntity: string };
+
+  const flatItems = useMemo<FlatItem[]>(() => {
+    if (activeDoc === "Statement of Values" || activeDoc === "Loss History") return [];
+    const items: FlatItem[] = [];
+    for (const domain of domainsFor(activeDoc)) {
+      items.push({ kind: "domain", domain });
+      for (const subEntity of subEntitiesFor(activeDoc, domain)) {
+        items.push({ kind: "subentity", domain, subEntity });
+        for (const f of fieldsFor(activeDoc, domain, subEntity)) {
+          items.push({ kind: "field", field: f, domain, subEntity });
+        }
+      }
+    }
+    return items;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDoc, fields]);
+
+  const fieldListRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: flatItems.length,
+    getScrollElement: () => fieldListRef.current,
+    estimateSize: (i) => {
+      const item = flatItems[i];
+      if (!item || item.kind === "domain")    return 34;
+      if (item.kind === "subentity")          return 30;
+      const f = item.field;
+      if (f.kind === "textarea")              return 140;
+      if (f.kind === "multi-select")          return 100;
+      if (f.kind === "repeatable-table")      return 180;
+      return 82;
+    },
+    overscan: 5,
+  });
+
   /* Left pane — domain/subEntity/field hierarchy within */
   const left = (
     <div className="flex flex-col h-full">
 
 
       {/* Active tab content — domain → subEntity → field rows */}
-      <div className="flex-1 overflow-auto flex flex-col min-h-0">
+      <div ref={fieldListRef} className="flex-1 overflow-auto flex flex-col min-h-0">
+        {/* Streaming indicator */}
+        {isStreaming && (
+          <div className="flex-shrink-0 flex items-center gap-2 px-3 py-1.5 bg-blue-50 border-b border-blue-100">
+            <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+            <span className="text-[10px] text-blue-700" style={{ fontWeight: 600 }}>Extracting fields…</span>
+          </div>
+        )}
         {activeDoc === "Statement of Values" ? (
           <SovIngestionView
             sov={extras.sov}
@@ -1669,182 +1802,190 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
             setVerified={setVerified}
             fieldKey={fieldKey}
           />
-        ) : domainsFor(activeDoc).map(domain => {
-          const allDomFields = fields.filter(f => f.doc === activeDoc && f.domain === domain);
-          const domFields = allDomFields;
-          const domVerified = domFields.filter(f => verified.has(fieldKey(f))).length;
-          return (
-            /* Level 2 — Domain name */
-            <div key={domain} className="border-b border-[#E8E6E1] last:border-b-0">
-              <div className="px-3 py-1.5 bg-[#FAFAF9] border-b border-[#F0EFEC] flex items-center justify-between">
-                <span className="text-[10px] uppercase tracking-[0.08em] text-[#4B5563]" style={{ fontWeight: 700 }}>{domain}</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-[#9B9B98] tabular-nums">{domVerified}/{domFields.length}</span>
-                  {domVerified < domFields.length && (
-                    <button onClick={() => verifyGroup(f => f.doc === activeDoc && f.domain === domain)}
-                      className="text-[10px] text-[#0076BC] hover:underline" style={{ fontWeight: 600 }}>
-                      Verify all
-                    </button>
-                  )}
-                </div>
-              </div>
+        ) : (
+          /* Virtual scroll — only renders visible field rows */
+          <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
+            {rowVirtualizer.getVirtualItems().map(vRow => {
+              const item = flatItems[vRow.index];
+              if (!item) return null;
+              return (
+                <div
+                  key={vRow.key}
+                  data-index={vRow.index}
+                  ref={rowVirtualizer.measureElement}
+                  style={{ position: "absolute", top: 0, left: 0, right: 0, transform: `translateY(${vRow.start}px)` }}
+                >
+                  {item.kind === "domain" && (() => {
+                    const domFields = fields.filter(f => f.doc === activeDoc && f.domain === item.domain);
+                    const domVerified = domFields.filter(f => verified.has(fieldKey(f))).length;
+                    return (
+                      <div className="border-b border-[#E8E6E1]">
+                        <div className="px-3 py-1.5 bg-[#FAFAF9] border-b border-[#F0EFEC] flex items-center justify-between">
+                          <span className="text-[10px] uppercase tracking-[0.08em] text-[#4B5563]" style={{ fontWeight: 700 }}>{item.domain}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-[#9B9B98] tabular-nums">{domVerified}/{domFields.length}</span>
+                            {domVerified < domFields.length && (
+                              <button onClick={() => verifyGroup(f => f.doc === activeDoc && f.domain === item.domain)}
+                                className="text-[10px] text-[#0076BC] hover:underline" style={{ fontWeight: 600 }}>
+                                Verify all
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  {item.kind === "subentity" && (() => {
+                    const subFields = fieldsFor(activeDoc, item.domain, item.subEntity);
+                    const subVerified = subFields.filter(f => verified.has(fieldKey(f))).length;
+                    return (
+                      <div className="pl-6 pr-3 py-1 bg-white border-b border-[#F0EFEC] flex items-center justify-between">
+                        <span className="inline-flex items-center gap-1.5 text-[10px] text-[#6B7280]" style={{ fontWeight: 600 }}>
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#0076BC]" />
+                          {item.subEntity}
+                        </span>
+                        <span className="text-[10px] text-[#C9C7C1] tabular-nums">{subVerified}/{subFields.length}</span>
+                      </div>
+                    );
+                  })()}
+                  {item.kind === "field" && (() => {
+                    const f = item.field;
+                    if (f.conditional) {
+                      const [condLabel, condValue] = f.conditional.split("=");
+                      const condField = fields.find(cf => cf.label === condLabel && cf.doc === f.doc);
+                      if (condField) {
+                        const condKey = fieldKey(condField);
+                        const condCurrent = values[condKey] ?? condField.value;
+                        const allowed = condValue.split("|");
+                        if (!allowed.includes(condCurrent as string)) return null;
+                      }
+                    }
+                    const key = fieldKey(f);
+                    const isV = verified.has(key);
+                    const isE = edited.has(key);
+                    const isSel = selectedField ? fieldKey(selectedField) === key : false;
+                    const currentVal = values[key] ?? f.value;
+                    const errMsg = validationErrors[key] ?? "";
+                    return (
+                      <div key={key}
+                        onClick={() => setSelectedField(f)}
+                        className={`pl-6 pr-3 py-2.5 transition-colors border-b border-[#F0EFEC] ${isSel ? "bg-[#EEF6FF]" : "hover:bg-[#FAFAF9]"}`}>
+                        {/* Label row */}
+                        <p className="text-[11px] text-[#4B5563] leading-snug mb-1" style={{ fontWeight: 600 }}>
+                          {f.label}
+                          <span className="inline-flex items-center align-middle ml-1"><FieldInfoTooltip detail={f.detail} /></span>
+                          {isE && !isV && (
+                            <span className="inline-flex items-center align-middle gap-0.5 ml-1 px-1 py-0.5 rounded text-[9px] bg-blue-50 text-blue-700 border border-blue-200" style={{ fontWeight: 700 }}>Edited</span>
+                          )}
+                        </p>
 
-              {subEntitiesFor(activeDoc, domain).map(subEntity => {
-                const allSubFields = fieldsFor(activeDoc, domain, subEntity);
-                const subFields = allSubFields;
-                const subVerified = subFields.filter(f => verified.has(fieldKey(f))).length;
-                return (
-                  /* Level 3 — Entity / sub-entity */
-                  <div key={subEntity}>
-                    <div className="pl-6 pr-3 py-1 bg-white border-b border-[#F0EFEC] flex items-center justify-between">
-                      <span className="inline-flex items-center gap-1.5 text-[10px] text-[#6B7280]" style={{ fontWeight: 600 }}>
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#0076BC]" />
-                        {subEntity}
-                      </span>
-                      <span className="text-[10px] text-[#C9C7C1] tabular-nums">{subVerified}/{subFields.length}</span>
-                    </div>
-
-                    {/* Level 4 — Field name and extracted value */}
-                    <div className="divide-y divide-[#F0EFEC]">
-                      {subFields.map(f => {
-                        if (f.conditional) {
-                          const [condLabel, condValue] = f.conditional.split("=");
-                          const condField = fields.find(cf => cf.label === condLabel && cf.doc === f.doc);
-                          if (condField) {
-                            const condKey = fieldKey(condField);
-                            const condCurrent = values[condKey] ?? condField.value;
-                            const allowed = condValue.split("|");
-                            if (!allowed.includes(condCurrent as string)) return null;
-                          }
-                        }
-                        const key = fieldKey(f);
-                        const isV = verified.has(key);
-                        const isE = edited.has(key);
-                        const isSel = selectedField ? fieldKey(selectedField) === key : false;
-                        const currentVal = values[key] ?? f.value;
-                        const errMsg = validationErrors[key] ?? "";
-                        return (
-                          <div key={key}
-                            onClick={() => setSelectedField(f)}
-                            className={`pl-6 pr-3 py-2.5 transition-colors ${isSel ? "bg-[#EEF6FF]" : "hover:bg-[#FAFAF9]"}`}>
-                            {/* Label row */}
-                            <p className="text-[11px] text-[#4B5563] leading-snug mb-1" style={{ fontWeight: 600 }}>
-                              {f.label}
-                              <span className="inline-flex items-center align-middle ml-1"><FieldInfoTooltip detail={f.detail} /></span>
-                              {isE && !isV && (
-                                <span className="inline-flex items-center align-middle gap-0.5 ml-1 px-1 py-0.5 rounded text-[9px] bg-blue-50 text-blue-700 border border-blue-200" style={{ fontWeight: 700 }}>Edited</span>
-                              )}
-                            </p>
-
-                            {/* Input + controls row */}
-                            <div className="flex items-start gap-3">
-                              <div className="flex-1 min-w-0">
-                                {/* Editable extracted value */}
-                                {(() => {
-                                  const hasErr = errMsg.length > 0;
-                                  const borderCls = hasErr
-                                    ? "border-red-400 focus:border-red-400"
-                                    : isV
-                                    ? "border-emerald-200 focus:border-emerald-400"
-                                    : "border-[#E8E6E1] focus:border-[#0076BC]";
-                                  const bgCls = hasErr ? "bg-red-50 text-[#2D2D2D]" : isV ? "bg-emerald-50 text-emerald-800" : "bg-white text-[#2D2D2D]";
-                                  const cls = `w-full text-[12px] px-2 py-1 rounded border focus:outline-none transition-colors ${borderCls} ${bgCls}`;
-                                  if (f.kind === "display") return (
-                                    <div className="w-full text-[12px] px-2 py-1 rounded border border-[#E8E6E1] bg-[#F8F7F4] text-[#6B7280] select-none">
-                                      {currentVal}
-                                    </div>
-                                  );
-                                  if (f.kind === "textarea") return (
-                                    <textarea rows={4} value={currentVal} onClick={e => e.stopPropagation()} onChange={e => updateValue(key, e.target.value)} onBlur={e => handleBlur(key, f.kind, e.target.value)} className={`${cls} resize-y min-h-[72px] max-h-[200px] leading-relaxed`} />
-                                  );
-                                  if (f.kind === "repeatable-table" && f.schema) return (
-                                    <div onClick={e => e.stopPropagation()}>
-                                      <RepeatableTable schema={f.schema} value={currentVal} onChange={v => updateValue(key, v)} />
-                                    </div>
-                                  );
-                                  if (f.kind === "multi-select" && f.options) {
-                                    const selected: string[] = currentVal ? currentVal.split(",").map((s: string) => s.trim()).filter(Boolean) : [];
-                                    const toggleOpt = (opt: string) => {
-                                      const next = selected.includes(opt) ? selected.filter(s => s !== opt) : [...selected, opt];
-                                      updateValue(key, next.join(", "));
-                                    };
-                                    return (
-                                      <div className="flex flex-wrap gap-1" onClick={e => e.stopPropagation()}>
-                                        {f.options.map((opt: string) => {
-                                          const active = selected.includes(opt);
-                                          return (
-                                            <button key={opt} type="button" onClick={() => toggleOpt(opt)}
-                                              className={`px-2 py-0.5 rounded-full border text-[10px] transition-colors ${active ? "bg-[#0076BC] border-[#0076BC] text-white" : "bg-white border-[#C8C6C1] text-[#5A5955] hover:border-[#0076BC] hover:text-[#0076BC]"}`}
-                                              style={{ fontWeight: active ? 700 : 400 }}>
-                                              {opt}
-                                            </button>
-                                          );
-                                        })}
-                                      </div>
-                                    );
-                                  }
-                                  if (f.kind === "select" && f.options) return (
-                                    <select value={currentVal} onClick={e => e.stopPropagation()} onChange={e => updateValue(key, e.target.value)} onBlur={e => handleBlur(key, f.kind, e.target.value)} className={cls}>
-                                      {(f.options.includes(currentVal) ? f.options : [currentVal, ...f.options]).map(o => <option key={o}>{o}</option>)}
-                                    </select>
-                                  );
-                                  if (f.kind === "currency") return (
-                                    <div className="relative">
-                                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-[#9B9B98]">$</span>
-                                      <input type="text" value={currentVal.replace(/^\$/, "")} onClick={e => e.stopPropagation()} onChange={e => updateValue(key, e.target.value)} onBlur={e => handleBlur(key, f.kind, e.target.value)} className={`${cls} pl-5 pr-2`} />
-                                    </div>
-                                  );
-                                  if (f.kind === "percent") return (
-                                    <div className="relative">
-                                      <input type="text" value={currentVal.replace(/%$/, "")} onClick={e => e.stopPropagation()} onChange={e => updateValue(key, e.target.value)} onBlur={e => handleBlur(key, f.kind, e.target.value)} className={`${cls} pr-6`} />
-                                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-[#9B9B98]">%</span>
-                                    </div>
-                                  );
-                                  return (
-                                    <input type="text" inputMode={f.kind === "numeric" ? "numeric" : undefined} value={currentVal} onClick={e => e.stopPropagation()} onChange={e => updateValue(key, e.target.value)} onBlur={e => handleBlur(key, f.kind, e.target.value)} className={cls} />
-                                  );
-                                })()}
-                                {errMsg && (
-                                  <div className="flex items-center gap-1 mt-0.5">
-                                    <AlertTriangle className="w-2.5 h-2.5 text-red-500 flex-shrink-0" />
-                                    <span className="text-[10px] text-red-600" style={{ fontWeight: 500 }}>{errMsg}</span>
-                                  </div>
-                                )}
-                                <div className="flex items-center gap-1.5 mt-1">
-                                  <span className="text-[10px] text-[#C9C7C1]">Source: {f.doc}</span>
+                        {/* Input + controls row */}
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1 min-w-0">
+                            {/* Editable extracted value */}
+                            {(() => {
+                              const hasErr = errMsg.length > 0;
+                              const borderCls = hasErr
+                                ? "border-red-400 focus:border-red-400"
+                                : isV
+                                ? "border-emerald-200 focus:border-emerald-400"
+                                : "border-[#E8E6E1] focus:border-[#0076BC]";
+                              const bgCls = hasErr ? "bg-red-50 text-[#2D2D2D]" : isV ? "bg-emerald-50 text-emerald-800" : "bg-white text-[#2D2D2D]";
+                              const cls = `w-full text-[12px] px-2 py-1 rounded border focus:outline-none transition-colors ${borderCls} ${bgCls}`;
+                              if (f.kind === "display") return (
+                                <div className="w-full text-[12px] px-2 py-1 rounded border border-[#E8E6E1] bg-[#F8F7F4] text-[#6B7280] select-none">
+                                  {currentVal}
                                 </div>
+                              );
+                              if (f.kind === "textarea") return (
+                                <textarea rows={4} value={currentVal} onClick={e => e.stopPropagation()} onChange={e => updateValue(key, e.target.value)} onBlur={e => handleBlur(key, f.kind, e.target.value)} className={`${cls} resize-y min-h-[72px] max-h-[200px] leading-relaxed`} />
+                              );
+                              if (f.kind === "repeatable-table" && f.schema) return (
+                                <div onClick={e => e.stopPropagation()}>
+                                  <RepeatableTable schema={f.schema} value={currentVal} onChange={v => updateValue(key, v)} />
+                                </div>
+                              );
+                              if (f.kind === "multi-select" && f.options) {
+                                const selected: string[] = currentVal ? currentVal.split(",").map((s: string) => s.trim()).filter(Boolean) : [];
+                                const toggleOpt = (opt: string) => {
+                                  const next = selected.includes(opt) ? selected.filter(s => s !== opt) : [...selected, opt];
+                                  updateValue(key, next.join(", "));
+                                };
+                                return (
+                                  <div className="flex flex-wrap gap-1" onClick={e => e.stopPropagation()}>
+                                    {f.options.map((opt: string) => {
+                                      const active = selected.includes(opt);
+                                      return (
+                                        <button key={opt} type="button" onClick={() => toggleOpt(opt)}
+                                          className={`px-2 py-0.5 rounded-full border text-[10px] transition-colors ${active ? "bg-[#0076BC] border-[#0076BC] text-white" : "bg-white border-[#C8C6C1] text-[#5A5955] hover:border-[#0076BC] hover:text-[#0076BC]"}`}
+                                          style={{ fontWeight: active ? 700 : 400 }}>
+                                          {opt}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              }
+                              if (f.kind === "select" && f.options) return (
+                                <select value={currentVal} onClick={e => e.stopPropagation()} onChange={e => updateValue(key, e.target.value)} onBlur={e => handleBlur(key, f.kind, e.target.value)} className={cls}>
+                                  {(f.options.includes(currentVal) ? f.options : [currentVal, ...f.options]).map(o => <option key={o}>{o}</option>)}
+                                </select>
+                              );
+                              if (f.kind === "currency") return (
+                                <div className="relative">
+                                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-[#9B9B98]">$</span>
+                                  <input type="text" value={currentVal.replace(/^\$/, "")} onClick={e => e.stopPropagation()} onChange={e => updateValue(key, e.target.value)} onBlur={e => handleBlur(key, f.kind, e.target.value)} className={`${cls} pl-5 pr-2`} />
+                                </div>
+                              );
+                              if (f.kind === "percent") return (
+                                <div className="relative">
+                                  <input type="text" value={currentVal.replace(/%$/, "")} onClick={e => e.stopPropagation()} onChange={e => updateValue(key, e.target.value)} onBlur={e => handleBlur(key, f.kind, e.target.value)} className={`${cls} pr-6`} />
+                                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-[#9B9B98]">%</span>
+                                </div>
+                              );
+                              return (
+                                <input type="text" inputMode={f.kind === "numeric" ? "numeric" : undefined} value={currentVal} onClick={e => e.stopPropagation()} onChange={e => updateValue(key, e.target.value)} onBlur={e => handleBlur(key, f.kind, e.target.value)} className={cls} />
+                              );
+                            })()}
+                            {errMsg && (
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <AlertTriangle className="w-2.5 h-2.5 text-red-500 flex-shrink-0" />
+                                <span className="text-[10px] text-red-600" style={{ fontWeight: 500 }}>{errMsg}</span>
                               </div>
-
-                              {/* Controls: citation + flag + verify */}
-                              <div className="flex items-center gap-1 flex-shrink-0 self-start">
-                                {f.docRef && (
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); openCitation(f.docRef!); }}
-                                    className={`h-6 px-1.5 rounded border flex items-center gap-0.5 text-[9px] transition-colors ${previewDoc === f.docRef.doc && previewHighlight === f.docRef.highlightLabel ? "bg-[#0076BC] border-[#0076BC] text-white" : "border-[#C2DFF4] bg-[#EEF6FF] text-[#0076BC] hover:bg-[#C2DFF4]"}`}
-                                    title={`View in ${f.docRef.doc}, page ${f.docRef.page}`}
-                                    style={{ fontWeight: 700 }}>
-                                    <FileText className="w-2.5 h-2.5" />
-                                    p{f.docRef.page}
-                                  </button>
-                                )}
-                                <button onClick={(e) => { e.stopPropagation(); if (!errMsg) toggle(verified, key, setVerified); }}
-                                  disabled={!!errMsg}
-                                  className={`w-6 h-6 rounded border flex items-center justify-center transition-colors ${errMsg ? "opacity-30 cursor-not-allowed border-[#E8E6E1]" : isV ? "bg-emerald-100 border-emerald-300" : "border-[#E8E6E1] hover:bg-emerald-50"}`}
-                                  title={errMsg ? "Fix validation errors before verifying" : "Mark as verified"}>
-                                  <Check className={`w-3 h-3 ${!errMsg && isV ? "text-emerald-600" : "text-[#C9C7C1]"}`} />
-                                </button>
-                              </div>
+                            )}
+                            <div className="flex items-center gap-1.5 mt-1">
+                              <span className="text-[10px] text-[#C9C7C1]">Source: {f.doc}</span>
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })}
+
+                          {/* Controls: citation + flag + verify */}
+                          <div className="flex items-center gap-1 flex-shrink-0 self-start">
+                            {f.docRef && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); openCitation(f.docRef!); }}
+                                className={`h-6 px-1.5 rounded border flex items-center gap-0.5 text-[9px] transition-colors ${previewDoc === f.docRef.doc && previewHighlight === f.docRef.highlightLabel ? "bg-[#0076BC] border-[#0076BC] text-white" : "border-[#C2DFF4] bg-[#EEF6FF] text-[#0076BC] hover:bg-[#C2DFF4]"}`}
+                                title={`View in ${f.docRef.doc}, page ${f.docRef.page}`}
+                                style={{ fontWeight: 700 }}>
+                                <FileText className="w-2.5 h-2.5" />
+                                p{f.docRef.page}
+                              </button>
+                            )}
+                            <button onClick={(e) => { e.stopPropagation(); if (!errMsg) toggle(verified, key, setVerified); }}
+                              disabled={!!errMsg}
+                              className={`w-6 h-6 rounded border flex items-center justify-center transition-colors ${errMsg ? "opacity-30 cursor-not-allowed border-[#E8E6E1]" : isV ? "bg-emerald-100 border-emerald-300" : "border-[#E8E6E1] hover:bg-emerald-50"}`}
+                              title={errMsg ? "Fix validation errors before verifying" : "Mark as verified"}>
+                              <Check className={`w-3 h-3 ${!errMsg && isV ? "text-emerald-600" : "text-[#C9C7C1]"}`} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1864,14 +2005,47 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
           </button>
         </div>
       )}
-      {/* Document viewer — PDF / Word / Excel chrome */}
+      {/* Document viewer — PDF / Word / Excel / Image chrome */}
       {(() => {
-        const WORD_DOCS = new Set(["Application", "Coverage Request", "Primary Policy"]);
+        // Determine viewer type — prefer explicit docType from citation, fallback to name-based
+        const WORD_DOCS  = new Set(["Application", "Coverage Request", "Primary Policy"]);
         const EXCEL_DOCS = new Set(["Statement of Values", "Loss History"]);
-        const page = pdfPages[previewDoc];
+        const IMAGE_DOCS = new Set(["Site Photos"]);
+        const resolvedType: DocType = activeDocType
+          ?? (IMAGE_DOCS.has(previewDoc) ? "image" : EXCEL_DOCS.has(previewDoc) ? "xlsx" : WORD_DOCS.has(previewDoc) ? "docx" : "pdf");
+        const page = docPage;
         const notReceived = !page;
 
-        if (EXCEL_DOCS.has(previewDoc)) {
+        if (docLoading) {
+          return (
+            <div className="flex-1 flex items-center justify-center bg-[#FAFAF9]">
+              <div className="text-center">
+                <div className="w-8 h-8 border-2 border-[#0076BC] border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                <div className="text-[11px] text-[#9B9B98]">Loading document…</div>
+              </div>
+            </div>
+          );
+        }
+        if (resolvedType === "image") {
+          return (
+            <div className="flex-1 flex flex-col bg-[#1C1C1C] overflow-hidden">
+              <div className="flex-shrink-0 px-3 py-1.5 flex items-center gap-2" style={{ background: "#2D2D2D" }}>
+                <Camera className="w-4 h-4 text-white opacity-70" />
+                <span className="text-white text-[11px]" style={{ fontWeight: 600 }}>{page?.title ?? previewDoc}</span>
+                <span className="ml-auto text-[10px] text-white opacity-40">4 photos</span>
+              </div>
+              <div className="flex-1 overflow-auto p-3">
+                {notReceived ? (
+                  <div className="text-center py-12">
+                    <Camera className="w-8 h-8 mx-auto mb-2 text-white opacity-20" />
+                    <div className="text-[11px] text-[#9B9B98]">Photos not yet received</div>
+                  </div>
+                ) : page.content(previewHighlight)}
+              </div>
+            </div>
+          );
+        }
+        if (resolvedType === "xlsx") {
           const sheetTabs: Record<string, string[]> = {
             "Statement of Values": ["Locations", "Summary", "Hazard"],
             "Loss History":        ["Claims", "Annual Summary", "Index"],
@@ -1903,7 +2077,7 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
               </div>
             </div>
           );
-        } else if (WORD_DOCS.has(previewDoc)) {
+        } else if (resolvedType === "docx") {
           return (
             <div className="flex-1 flex flex-col bg-[#E8EDF2] overflow-hidden">
               <div className="flex-shrink-0 px-3 py-1.5 flex items-center gap-2" style={{ background: "#2B579A" }}>
@@ -1975,7 +2149,7 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
         <CitationModal
           docRef={citationModal.ref}
           citNum={citationModal.citNum}
-          pdfPages={pdfPages}
+          pdfPages={getPdfPages()}
           meta={{ id: meta.id, namedInsured: meta.namedInsured, submissionDate: meta.submissionDate }}
           onClose={() => setCitationModal(null)}
         />
@@ -2024,26 +2198,29 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
         }
         left={left}
         rightHeader={(() => {
-          const WORD_DOCS = new Set(["Application", "Coverage Request", "Primary Policy"]);
+          const WORD_DOCS  = new Set(["Application", "Coverage Request", "Primary Policy"]);
           const EXCEL_DOCS = new Set(["Statement of Values", "Loss History"]);
-          const docTypeCfg = EXCEL_DOCS.has(previewDoc)
-            ? { label: "XLSX", bg: "#217346", fg: "white" }
-            : WORD_DOCS.has(previewDoc)
-            ? { label: "DOCX", bg: "#2B579A", fg: "white" }
-            : { label: "PDF", bg: "#D93025", fg: "white" };
+          const IMAGE_DOCS = new Set(["Site Photos"]);
+          const resolvedType: DocType = activeDocType
+            ?? (IMAGE_DOCS.has(previewDoc) ? "image" : EXCEL_DOCS.has(previewDoc) ? "xlsx" : WORD_DOCS.has(previewDoc) ? "docx" : "pdf");
+          const docTypeCfg =
+            resolvedType === "xlsx"  ? { label: "XLSX", bg: "#217346", fg: "white" } :
+            resolvedType === "docx"  ? { label: "DOCX", bg: "#2B579A", fg: "white" } :
+            resolvedType === "image" ? { label: "IMG",  bg: "#374151", fg: "white" } :
+                                       { label: "PDF",  bg: "#D93025", fg: "white" };
           return (
             <>
               <span className="px-1.5 py-0.5 rounded text-[9px] flex-shrink-0" style={{ background: docTypeCfg.bg, color: docTypeCfg.fg, fontWeight: 700 }}>{docTypeCfg.label}</span>
-              <PaneTitle title={pdfPages[previewDoc]?.title ?? previewDoc} />
+              <PaneTitle title={docPage?.title ?? previewDoc} />
               <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
                 <button onClick={() => setPreviewPage(p => Math.max(1, p - 1))}
                   className="w-5 h-5 rounded flex items-center justify-center bg-[#F0EFEC] hover:bg-[#E8E6E1] text-[#4B5563]">
                   <ChevronLeft className="w-3 h-3" />
                 </button>
                 <span className="text-[10px] text-[#6B7280] tabular-nums w-14 text-center">
-                  {previewPage} / {pdfPages[previewDoc]?.pageCount ?? 1}
+                  {previewPage} / {docPage?.pageCount ?? 1}
                 </span>
-                <button onClick={() => setPreviewPage(p => Math.min(pdfPages[previewDoc]?.pageCount ?? 1, p + 1))}
+                <button onClick={() => setPreviewPage(p => Math.min(docPage?.pageCount ?? 1, p + 1))}
                   className="w-5 h-5 rounded flex items-center justify-center bg-[#F0EFEC] hover:bg-[#E8E6E1] text-[#4B5563]">
                   <ChevronRight className="w-3 h-3" />
                 </button>

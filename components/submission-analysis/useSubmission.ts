@@ -1,6 +1,7 @@
 "use client";
 import type { SubmissionMeta, SubmissionExtras } from "./types";
 import type { CatalogField } from "./types";
+// import useSWR from "swr"; // uncomment when API endpoints are ready
 import { submissionData, DEFAULT_EXTRAS, submissionExtras, buildFieldCatalog } from "./mock-data";
 import { SUBMISSION_INDEX } from "../CustomerTable";
 
@@ -57,7 +58,15 @@ export function useIngestionFields(submissionId: string | undefined): {
   isLoading: boolean;
   error: string | null;
 } {
-  // TODO: Replace with → useSWR(submissionId ? `/api/submissions/${submissionId}/ingestion-fields` : null, fetcher)
+  // TODO: Uncomment when /api/submissions/{id}/fields is available:
+  // const { data, isLoading, error } = useSWR<CatalogField[]>(
+  //   submissionId ? `/api/submissions/${submissionId}/fields` : null,
+  //   (url: string) => fetch(url).then(r => r.json()),
+  //   { revalidateOnFocus: false, dedupingInterval: 300_000 },
+  // );
+  // return { fields: data ?? null, isLoading, error: error?.message ?? null };
+
+  // Mock fallback — remove once API is live
   const { data } = useSubmission(submissionId);
   const idx = submissionId ? SUBMISSION_INDEX[submissionId] : undefined;
   if (!data || !idx) return { fields: null, isLoading: false, error: null };

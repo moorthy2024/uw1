@@ -15,6 +15,7 @@ export interface CatalogDocRef {
   page: number;
   excerpt: string;
   highlightLabel: string;
+  docType?: DocType;
 }
 
 export interface CatalogField {
@@ -81,3 +82,11 @@ export const CRITICALITY_STYLE: Record<Criticality, string> = {
   "Flag if missing":       "bg-amber-50 text-amber-800 border-amber-200",
   "QBE Layer dependent":   "bg-[#EEF2FF] text-[#4F46E5] border-[#C7D2FE]",
 };
+
+export type DocType = "pdf" | "xlsx" | "docx" | "image";
+
+export interface PdfPage {
+  title:     string;
+  pageCount: number;
+  content:   (highlight: string) => import("react").ReactNode;
+}
