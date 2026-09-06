@@ -843,17 +843,25 @@ function IndustryClassBadge({ cls: _cls, industry }: { cls: IndustryClass; indus
 
 // ── Broker Cell ──
 function BrokerageCell({ name, boundRate }: { name: string; boundRate: number }) {
+  if (!name || name === "-") {
+    return <div className="text-[12px]" style={{ color: "#94A3B8" }}>-</div>;
+  }
   return (
     <div className="min-w-0">
       <div className="text-[12px] text-[#0D1B2E] truncate max-w-[100px]" style={{ fontWeight: 600 }}>{name}</div>
-      <div className="mt-0.5">
-        <span className="text-[10px] text-[#94A3B8]">{boundRate}% bound</span>
-      </div>
+      {boundRate > 0 && (
+        <div className="mt-0.5">
+          <span className="text-[10px] text-[#94A3B8]">{boundRate}% bound</span>
+        </div>
+      )}
     </div>
   );
 }
 
 function BrokerContactCell({ contact }: { contact: string }) {
+  if (!contact || contact === "-") {
+    return <div className="text-[12px]" style={{ color: "#94A3B8" }}>-</div>;
+  }
   return (
     <div className="text-[12px] text-[#0D1B2E] truncate max-w-[130px]" style={{ fontWeight: 500 }}>{contact}</div>
   );
@@ -881,7 +889,10 @@ function urgencyDays(needBy: string): number {
 }
 
 function fmtFullDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  // Add local time component to date-only strings to avoid UTC midnight → wrong-day shift
+  const d = new Date(iso.includes("T") ? iso : `${iso}T00:00:00`);
+  if (isNaN(d.getTime())) return "-";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function DateCell({ date }: { date: string }) {
@@ -1433,7 +1444,9 @@ export function CustomerTable({
                         </div>
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <SubTypeBadge type={sub.submissionType} />
-                          <span className="text-[10px] text-[#0076BC]" style={{ fontWeight: 600 }}>{sub.id}</span>
+                          <span className="text-[10px] text-[#0076BC]" style={{ fontWeight: 600 }} title={sub.id}>
+                            {sub.id.length > 14 ? `${sub.id.slice(0, 12)}…` : sub.id}
+                          </span>
                         </div>
                       </div>
                     </td>
@@ -1470,40 +1483,54 @@ export function CustomerTable({
 
                     {/* Occupancy — top 3 from SOV */}
                     <td className="px-4 py-3 align-top">
-                      <div className="flex flex-col gap-1">
-                        {sub.occupancyByTIV.slice(0, 3).map(slice => (
-                          <div key={slice.name} className="flex items-center justify-between gap-2 min-w-[120px]">
-                            <span className="text-[11px] truncate" style={{ color: "#1E3A5F", fontWeight: 500 }}>{slice.name}</span>
-                            <span className="text-[10px] tabular-nums flex-shrink-0" style={{ color: "#94A3B8" }}>{slice.pct}%</span>
-                          </div>
-                        ))}
-                      </div>
+                      {sub.occupancyByTIV.length > 0 ? (
+                        <div className="flex flex-col gap-1">
+                          {sub.occupancyByTIV.slice(0, 3).map(slice => (
+                            <div key={slice.name} className="flex items-center justify-between gap-2 min-w-[120px]">
+                              <span className="text-[11px] truncate" style={{ color: "#1E3A5F", fontWeight: 500 }}>{slice.name}</span>
+                              <span className="text-[10px] tabular-nums flex-shrink-0" style={{ color: "#94A3B8" }}>{slice.pct}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-[12px]" style={{ color: "#94A3B8" }}>-</div>
+                      )}
                     </td>
 
                     {/* TIV */}
                     <td className="px-4 py-3 align-top">
-                      <div className="text-[13px] font-bold tabular-nums" style={{ color: "#00205B" }}>
-                        {fmtTIV(sub.totalTIVm)}
+                      <div className="text-[13px] font-bold tabular-nums" style={{ color: sub.totalTIVm === 0 ? "#94A3B8" : "#00205B" }}>
+                        {sub.totalTIVm === 0 ? "-" : fmtTIV(sub.totalTIVm)}
                       </div>
                     </td>
 
                     {/* Occupancy % TIV */}
                     <td className="px-4 py-3 align-top">
-                      <AppetiteBucketBar slices={sub.occupancyAppetite} />
+                      {sub.occupancyAppetite.length > 0
+                        ? <AppetiteBucketBar slices={sub.occupancyAppetite} />
+                        : <div className="text-[12px]" style={{ color: "#94A3B8" }}>-</div>
+                      }
                     </td>
 
                     {/* 5-Yr Paid Claims */}
                     <td className="px-4 py-3 align-top">
-                      <div className="flex flex-col gap-0.5">
-                        <div className="text-[9px] uppercase tracking-wide" style={{ color: "#94A3B8", fontWeight: 700 }}>5-Year History</div>
-                        <div className="text-[15px] font-extrabold tabular-nums" style={{ color: "#00205B" }}>{sub.paidClaims5yr}</div>
-                        <div className="text-[9px]" style={{ color: "#94A3B8" }}>total paid claims</div>
-                      </div>
+                      {sub.paidClaims5yr === "-" ? (
+                        <div className="text-[12px]" style={{ color: "#94A3B8" }}>-</div>
+                      ) : (
+                        <div className="flex flex-col gap-0.5">
+                          <div className="text-[9px] uppercase tracking-wide" style={{ color: "#94A3B8", fontWeight: 700 }}>5-Year History</div>
+                          <div className="text-[15px] font-extrabold tabular-nums" style={{ color: "#00205B" }}>{sub.paidClaims5yr}</div>
+                          <div className="text-[9px]" style={{ color: "#94A3B8" }}>total paid claims</div>
+                        </div>
+                      )}
                     </td>
 
                     {/* TIV / Construction */}
                     <td className="px-4 py-3 align-top">
-                      <HazardCell grade={sub.hazardGrade} constClass={sub.topConstructionClass} constPct={sub.constructionClassPct} totalTIVm={sub.totalTIVm} sprinkleredPct={sub.sprinkleredPct} />
+                      {sub.topConstructionClass === "-" && sub.sprinkleredPct === 0
+                        ? <div className="text-[12px]" style={{ color: "#94A3B8" }}>-</div>
+                        : <HazardCell grade={sub.hazardGrade} constClass={sub.topConstructionClass} constPct={sub.constructionClassPct} totalTIVm={sub.totalTIVm} sprinkleredPct={sub.sprinkleredPct} />
+                      }
                     </td>
 
                     {/* Assigned UW */}

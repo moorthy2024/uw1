@@ -196,9 +196,10 @@ function PipelineStrip({
 
 // ── Helpers ─────────────────────────────────────────────────────
 function fmtDate(iso: string) {
-  const [y, m, d] = iso.split("-");
-  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  return `${months[+m - 1]} ${+d}, ${y}`;
+  if (!iso || iso === "-") return "-";
+  const d = new Date(iso.includes("T") ? iso : `${iso}T00:00:00`);
+  if (isNaN(d.getTime())) return "-";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 
@@ -261,7 +262,7 @@ const assignedUW = assignedUWProp ?? sub.assignedUW;
   const initials  = uwInitials(assignedUW);
   const avatarBg  = UW_COLORS[assignedUW] ?? "linear-gradient(135deg,#64748B,#334155)";
   const canReassign = assignedUW === "Mike Farrell" && !!onReassign;
-  const isClickable = INTERACTIVE_ACCOUNTS.has(sub.account);
+  const isClickable = true; // all API submissions are interactive
   const [uwOpen, setUwOpen] = useState(false);
   const uwRef = useRef<HTMLDivElement>(null);
 
@@ -335,8 +336,9 @@ const assignedUW = assignedUWProp ?? sub.assignedUW;
           <span className="text-[11px]" style={{ color: "#94A3B8" }}>{sub.homeOffice}</span>
           <span className="text-[#CBD5E1]">·</span>
           <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold"
-            style={{ color: "#6B81A0", backgroundColor: "#F0F4FF", border: "1px solid #E0E8FF" }}>
-            {sub.id}
+            style={{ color: "#6B81A0", backgroundColor: "#F0F4FF", border: "1px solid #E0E8FF" }}
+            title={sub.id}>
+            {sub.id.length > 14 ? `${sub.id.slice(0, 12)}…` : sub.id}
           </span>
         </div>
       </div>
@@ -353,22 +355,24 @@ const assignedUW = assignedUWProp ?? sub.assignedUW;
               ].map(({ label, value }) => (
                 <Fragment key={label}>
                   <span className="text-[10px] whitespace-nowrap" style={{ color: "#94A3B8" }}>{label}</span>
-                  <span className="text-[10px] font-semibold truncate" style={{ color: "#0D1B2E" }}>{value}</span>
+                  <span className="text-[10px] font-semibold truncate" style={{ color: value === "-" ? "#94A3B8" : "#0D1B2E" }}>{value}</span>
                 </Fragment>
               ))}
               {/* Occupancy — top 3 from SOV */}
               <span className="text-[10px] whitespace-nowrap self-start pt-0.5" style={{ color: "#94A3B8" }}>Occupancy</span>
               <div className="flex flex-col gap-0.5">
-                {sub.occupancyByTIV.slice(0, 3).map(slice => (
+                {sub.occupancyByTIV.length > 0 ? sub.occupancyByTIV.slice(0, 3).map(slice => (
                   <div key={slice.name} className="flex items-center justify-between gap-1">
                     <span className="text-[10px] font-semibold truncate" style={{ color: "#0D1B2E" }}>{slice.name}</span>
                     <span className="text-[9px] tabular-nums flex-shrink-0" style={{ color: "#94A3B8" }}>{slice.pct}%</span>
                   </div>
-                ))}
+                )) : <span className="text-[10px] font-semibold" style={{ color: "#94A3B8" }}>-</span>}
               </div>
               {/* TIV */}
               <span className="text-[10px] whitespace-nowrap" style={{ color: "#94A3B8" }}>TIV</span>
-              <span className="text-[10px] font-semibold truncate" style={{ color: "#0D1B2E" }}>{fmtTIV(sub.totalTIVm)}</span>
+              <span className="text-[10px] font-semibold truncate" style={{ color: sub.totalTIVm === 0 ? "#94A3B8" : "#0D1B2E" }}>
+                {sub.totalTIVm === 0 ? "-" : fmtTIV(sub.totalTIVm)}
+              </span>
             </div>
           </div>
           <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
@@ -380,33 +384,48 @@ const assignedUW = assignedUWProp ?? sub.assignedUW;
         {/* Sprinkler */}
         <div className="mb-3 mt-3">
           <div className="text-[9px] uppercase tracking-wide mb-0.5" style={{ color: "#94A3B8", fontWeight: 700 }}>Sprinkler</div>
-          <div className="flex h-1.5 rounded-full overflow-hidden w-full mb-1">
-            <div style={{ width: `${sub.sprinkleredPct}%`, backgroundColor: "#0076BC" }} />
-            <div style={{ width: `${100 - sub.sprinkleredPct}%`, backgroundColor: "#E0E8FF" }} />
-          </div>
-          <div className="flex justify-between text-[9px]">
-            <span className="flex items-center gap-0.5" style={{ color: "#94A3B8" }}>
-              <span className="w-1.5 h-1.5 rounded-sm inline-block flex-shrink-0" style={{ backgroundColor: "#0076BC" }} />
-              Sprinklered <span style={{ color: "#1E3A5F", fontWeight: 600, marginLeft: 2 }}>{sub.sprinkleredPct}%</span>
-            </span>
-            <span className="flex items-center gap-0.5" style={{ color: "#94A3B8" }}>
-              <span className="w-1.5 h-1.5 rounded-sm inline-block flex-shrink-0" style={{ backgroundColor: "#E0E8FF", border: "1px solid #CBD5E1" }} />
-              Not Sprinklered <span style={{ color: "#1E3A5F", fontWeight: 600, marginLeft: 2 }}>{100 - sub.sprinkleredPct}%</span>
-            </span>
-          </div>
+          {sub.sprinkleredPct === 0 ? (
+            <span className="text-[10px] font-semibold" style={{ color: "#94A3B8" }}>-</span>
+          ) : (
+            <>
+              <div className="flex h-1.5 rounded-full overflow-hidden w-full mb-1">
+                <div style={{ width: `${sub.sprinkleredPct}%`, backgroundColor: "#0076BC" }} />
+                <div style={{ width: `${100 - sub.sprinkleredPct}%`, backgroundColor: "#E0E8FF" }} />
+              </div>
+              <div className="flex justify-between text-[9px]">
+                <span className="flex items-center gap-0.5" style={{ color: "#94A3B8" }}>
+                  <span className="w-1.5 h-1.5 rounded-sm inline-block flex-shrink-0" style={{ backgroundColor: "#0076BC" }} />
+                  Sprinklered <span style={{ color: "#1E3A5F", fontWeight: 600, marginLeft: 2 }}>{sub.sprinkleredPct}%</span>
+                </span>
+                <span className="flex items-center gap-0.5" style={{ color: "#94A3B8" }}>
+                  <span className="w-1.5 h-1.5 rounded-sm inline-block flex-shrink-0" style={{ backgroundColor: "#E0E8FF", border: "1px solid #CBD5E1" }} />
+                  Not Sprinklered <span style={{ color: "#1E3A5F", fontWeight: 600, marginLeft: 2 }}>{100 - sub.sprinkleredPct}%</span>
+                </span>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Occupancy % TIV */}
         <div className="mb-3 mt-3">
           <div className="text-[9px] uppercase tracking-wide mb-0.5" style={{ color: "#94A3B8", fontWeight: 700 }}>Occupancy % TIV</div>
-          <AppetiteBucketBar slices={sub.occupancyAppetite} inline />
+          {sub.occupancyAppetite.length > 0
+            ? <AppetiteBucketBar slices={sub.occupancyAppetite} inline />
+            : <span className="text-[10px] font-semibold" style={{ color: "#94A3B8" }}>-</span>
+          }
         </div>
 
         {/* 5-Yr Paid Claims */}
         <div>
           <div className="text-[9px] uppercase tracking-wide mb-0.5" style={{ color: "#94A3B8", fontWeight: 700 }}>5-Yr Paid Claims</div>
-          <div className="text-[16px] font-extrabold tabular-nums leading-none" style={{ color: "#00205B" }}>{sub.paidClaims5yr}</div>
-          <div className="text-[8px] mt-0.5" style={{ color: "#94A3B8" }}>5-year claims history</div>
+          {sub.paidClaims5yr === "-" ? (
+            <span className="text-[10px] font-semibold" style={{ color: "#94A3B8" }}>-</span>
+          ) : (
+            <>
+              <div className="text-[16px] font-extrabold tabular-nums leading-none" style={{ color: "#00205B" }}>{sub.paidClaims5yr}</div>
+              <div className="text-[8px] mt-0.5" style={{ color: "#94A3B8" }}>5-year claims history</div>
+            </>
+          )}
         </div>
       </div>
 
