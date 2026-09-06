@@ -3,7 +3,7 @@ import type { SubmissionMeta, SubmissionExtras, SovLocation } from "../Submissio
 import type { SubmissionIndexEntry } from "../CustomerTable";
 import { PINNACLE_SOV_LOCATIONS } from "@/app/data/pinnacleSOV";
 import { loadHeartlandSOV } from "@/app/data/heartlandSOV";
-import type { CatalogMeta, CatalogExtras, CatalogField, CatalogDocRef } from "./types";
+import type { CatalogMeta, CatalogExtras, CatalogField, CatalogDocRef, DocType } from "./types";
 
 export const submissionData: Record<string, SubmissionMeta> = {
   "SUB-2026-0847": {
@@ -923,7 +923,7 @@ export const HEALTH_CHECK_CFG: Record<SovLocation["healthCheck"], { label: strin
 
 /* ── Ingestion field catalog data ─────────────────────────────────────────── */
 
-/* Expected documents â€” top level of the hierarchy, also the pre-flight checklist */
+/* Expected documents — top level of the hierarchy, also the pre-flight checklist */
 export const EXPECTED_DOCS = [
   "Application",
   "Coverage Request",
@@ -942,7 +942,7 @@ export const DOMAIN_ORDER = [
   "Financial / Account Reference",
 ] as const;
 
-/** Add one year to an MM/DD/YYYY date string â€” used to derive the expiry date. */
+/** Add one year to an MM/DD/YYYY date string — used to derive the expiry date. */
 function plusOneYear(date: string): string {
   const parts = date.split("/");
   if (parts.length !== 3) return date;
@@ -957,46 +957,61 @@ export function buildFieldCatalog(
 ): CatalogField[] {
   const isRenewal = meta.type === "Renewal";
   const state = extras.sov.stats.topState;
-  const ref = (doc: string, page: number, excerpt: string, label: string): CatalogDocRef =>
-    ({ doc, page, excerpt, highlightLabel: label });
-  // Heartland demo: first 4 fields each cite a different document type
+  const ref = (doc: string, page: number, excerpt: string, label: string, docType?: DocType, bbox?: CatalogDocRef['bbox'], sheet?: string, docUrl?: string): CatalogDocRef =>
+    ({ doc, page, excerpt, highlightLabel: label, ...(docType && { docType }), ...(bbox && { bbox }), ...(sheet && { sheet }), ...(docUrl && { docUrl }) });
+  // Heartland demo: fields 1-8 each cite different pages/sheets from real local documents
   const isHeartland = meta.id === "SUB-2026-1103";
+  // Local sample documents in /public/docs/ — place real files there to activate real rendering
+  const HL_PDF   = "/docs/heartland-re-report.pdf";
+  const HL_XLSX  = "/docs/heartland-sov.xlsx";
+  const HL_DOCX  = "/docs/heartland-application.docx";
+  const HL_IMG   = "/docs/heartland-site-photo-1.jpg";
+  const HL_CSV   = "/docs/heartland-loss-run.csv";
 
   return [
-    /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Application â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ Application â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */
     { doc: "Application", domain: "Party & Customer", subEntity: "Insured",
       label: "Named insured (legal name)", detail: "Account Name", critical: "Yes", kind: "text",
       value: meta.namedInsured, confidence: 98,
-      docRef: isHeartland ? ref("Risk Engineering Report", 1, "Named Insured on survey letterhead", "Named Insured") : ref("Application", 1, "Named Insured field", "Named Insured") },
+      // highlightLabel = verbatim text the backend extracts from the document (field value)
+      docRef: isHeartland ? ref("Risk Engineering Report", 1, "Named Insured on survey letterhead", meta.namedInsured, "pdf", {x1:188,y1:133,x2:490,y2:155}, undefined, HL_PDF) : ref("Application", 1, "Named Insured field", "Named Insured") },
     { doc: "Application", domain: "Party & Customer", subEntity: "Insured",
       label: "Legal entity type", detail: "LLC, Corp, Partnership, Trust", critical: "Yes", kind: "select",
       value: "Corporation", confidence: 93, options: ["LLC", "Corporation", "Partnership", "Trust"],
-      docRef: isHeartland ? ref("Statement of Values", 1, "Entity type in SOV header row", "Legal Entity Type") : ref("Application", 1, "Entity type declaration", "Legal Entity Type") },
+      docRef: isHeartland ? ref("Statement of Values", 1, "Entity type in SOV header row", "Corporation", "xlsx", {x1:232,y1:100,x2:432,y2:122}, undefined, HL_XLSX) : ref("Application", 1, "Entity type declaration", "Legal Entity Type") },
     { doc: "Application", domain: "Party & Customer", subEntity: "Insured",
-      label: "NAICS code (Industry Level 3 â€” Salesforce)", detail: "Industry Code e.g. Agriculture, Construction, Manufacturing", critical: "Yes", kind: "text",
+      label: "NAICS code (Industry Level 3 – Salesforce)", detail: "Industry Code e.g. Agriculture, Construction, Manufacturing", critical: "Yes", kind: "text",
       value: meta.naics, confidence: 95,
-      docRef: ref("Application", 1, "Business classification", "NAICS Code") },
+      docRef: isHeartland ? ref("Application", 1, "Business classification code", meta.naics, "docx", {x1:202,y1:248,x2:370,y2:270}, undefined, HL_DOCX) : ref("Application", 1, "Business classification", "NAICS Code") },
     { doc: "Application", domain: "Party & Customer", subEntity: "Insured",
       label: "Appetite ID (4-digit, from Hazard Grade tool)", detail: "4-digit row ID from QBE's Hazard Grade tool for the occupancy/SIC combination; sets appetite and capacity", critical: "Yes", kind: "numeric",
       value: "4182", confidence: 86,
-      docRef: isHeartland ? ref("Site Photos", 1, "Aerial photo — facility occupancy classification", "Appetite ID") : ref("Application", 1, "Occupancy / SIC combination", "Appetite ID") },
+      docRef: isHeartland ? ref("Site Photos", 1, "Aerial photo — facility occupancy classification", "4182", "image", {x1:78,y1:92,x2:490,y2:320}, undefined, HL_IMG) : ref("Application", 1, "Occupancy / SIC combination", "Appetite ID") },
     { doc: "Application", domain: "Party & Customer", subEntity: "Insured",
       label: "ATC occupancy code", detail: "Classifies buildings by primary use e.g. Apartment, Church, Dwellings", critical: "Yes", kind: "numeric",
       value: "48", confidence: 89,
-      docRef: ref("Application", 1, "Occupancy classification", "ATC Occupancy Code") },
+      docRef: isHeartland
+        ? ref("Risk Engineering Report", 2, "ATC occupancy class on page 2", "48", "pdf", {x1:188,y1:195,x2:490,y2:217}, undefined, HL_PDF)
+        : ref("Application", 1, "Occupancy classification", "ATC Occupancy Code") },
     { doc: "Application", domain: "Party & Customer", subEntity: "Insured",
       label: "Occupancy description (text label)", detail: "Select the occupancy category that best describes the primary use of the insured's properties. Choose 'Other (describe below)' if no category fits.", critical: "Yes", kind: "select",
       value: meta.industry, confidence: 92,
       options: ["Healthcare / Medical", "Industrial / Manufacturing", "Real Estate / Habitational", "Municipalities / Government", "Education / Institutional", "Hospitality / Lodging", "Office / Professional Services", "Financial Institutions / Banking", "Retail / Wholesale Trade", "Light Manufacturing / Assembly", "Warehouse / Distribution", "Other (describe below)"],
-      docRef: ref("Application", 1, "Occupancy description", "Occupancy Description") },
+      docRef: isHeartland
+        ? ref("Statement of Values", 1, "Occupancy type per location — Locations sheet", meta.industry, "xlsx", {x1:287,y1:78,x2:407,y2:100}, "Locations", HL_XLSX)
+        : ref("Application", 1, "Occupancy description", "Occupancy Description") },
     { doc: "Application", domain: "Party & Customer", subEntity: "Insured",
       label: "Description of Operations & Material Flow", detail: "Describe the insured's primary business operations, materials handled, and any processes that may affect property risk (e.g. chemicals, hazardous materials, storage, manufacturing steps)", critical: "Yes", kind: "textarea",
       value: `${meta.industry} operations across ${meta.locations} scheduled locations`, confidence: 88,
-      docRef: ref("Application", 1, "Operations narrative", "Business Operations") },
+      docRef: isHeartland
+        ? ref("Application", 3, "Operations narrative — material flow description", meta.industry, "docx", {x1:64,y1:152,x2:530,y2:272}, undefined, HL_DOCX)
+        : ref("Application", 1, "Operations narrative", "Business Operations") },
     { doc: "Application", domain: "Party & Customer", subEntity: "Insured",
       label: "Occupancy group (Commercial / Residential / Other)", detail: "Target Occupancy Classes: Healthcare, Industrial, Real Estate, Municipalities, Education, Hospitality, Offices, Financial Institutions, Retail, Wholesale, Light Manufacturing", critical: "Yes", kind: "select",
       value: "Commercial", confidence: 94, options: ["Commercial", "Residential", "Other"],
-      docRef: ref("Application", 1, "Occupancy group", "Occupancy Group") },
+      docRef: isHeartland
+        ? ref("Application", 2, "Building classification — occupancy group declaration", "Commercial", "docx", {x1:202,y1:278,x2:430,y2:300}, undefined, HL_DOCX)
+        : ref("Application", 1, "Occupancy group", "Occupancy Group") },
 
     { doc: "Application", domain: "Party & Customer", subEntity: "Broker / Producer",
       label: "Broker firm name", detail: "Name of the brokerage submitting the risk", critical: "Yes", kind: "text",
@@ -1012,7 +1027,7 @@ export function buildFieldCatalog(
       docRef: ref("Application", 3, "Broker information section", "Broker Contact") },
     { doc: "Application", domain: "Party & Customer", subEntity: "Broker / Producer",
       label: "Retail broker name (if wholesale)", detail: "Underlying retail broker when a wholesale intermediary places the risk", critical: "Yes", kind: "text",
-      value: "Not applicable â€” direct retail placement", confidence: 78,
+      value: "Not applicable — direct retail placement", confidence: 78,
       docRef: ref("Application", 3, "Retail broker declaration", "Retail Broker") },
     { doc: "Application", domain: "Party & Customer", subEntity: "Broker / Producer",
       label: "Proposed Commission (%)", detail: "Brokerage commission percentage proposed by the broker; deducted from gross premium at bind", critical: "Yes", kind: "percent",
@@ -1037,7 +1052,7 @@ export function buildFieldCatalog(
       docRef: ref("Application", 1, "Territory scope", "US Domestic Flag") },
     { doc: "Application", domain: "Location / Insurable Object", subEntity: "Location",
       label: "Fronting carrier name (if applicable)", detail: "Local carrier issuing policy for international locations; QBE sits behind as assumed reinsurer", critical: "Yes", kind: "text",
-      value: "Not applicable â€” US domestic risk", confidence: 80,
+      value: "Not applicable — US domestic risk", confidence: 80,
       docRef: ref("Application", 1, "Fronting arrangements", "Fronting Carrier") },
 
     { doc: "Application", domain: "Agreement / Policy", subEntity: "Policy / Slip",
@@ -1054,19 +1069,19 @@ export function buildFieldCatalog(
       docRef: ref("Application", 2, "Coverage request header", "Submission Type") },
     { doc: "Application", domain: "Agreement / Policy", subEntity: "Policy / Slip",
       label: "Prior Policy Number (Renewals)", detail: "Policy number from the expiring term, used to locate prior files and pull loss history. Populated for renewals only; enter 'Not applicable' for new business.", critical: "Yes", kind: "text",
-      value: isRenewal ? "140012568" : "Not applicable â€” new business", confidence: isRenewal ? 93 : 75,
-      flagReason: isRenewal ? undefined : "No prior term â€” new business submission",
+      value: isRenewal ? "140012568" : "Not applicable — new business", confidence: isRenewal ? 93 : 75,
+      flagReason: isRenewal ? undefined : "No prior term — new business submission",
       docRef: ref("Application", 2, "Expiring policy reference", "Prior Policy Number") },
     { doc: "Application", domain: "Agreement / Policy", subEntity: "Policy / Slip",
       label: "Submission received date / timestamp", detail: "Date and time the submission email or portal download was received; determines \"First In\" broker priority", critical: "Yes", kind: "date",
       value: `${meta.submissionDate} at 10:32 AM`, confidence: 99,
       docRef: ref("Application", 1, "Date of submission", "Submission Date") },
     { doc: "Application", domain: "Agreement / Policy", subEntity: "System Reference",
-      label: "Submission Reference Number (SUB-YYYY-XXXX)", detail: "Internal workflow identifier â€” not the insurance policy number. Assigned at Clearance & Setup; primary reference across all screens and system records.", critical: "Yes", kind: "text",
+      label: "Submission Reference Number (SUB-YYYY-XXXX)", detail: "Internal workflow identifier — not the insurance policy number. Assigned at Clearance & Setup; primary reference across all screens and system records.", critical: "Yes", kind: "text",
       value: meta.id, confidence: 100,
       docRef: ref("Application", 1, "Workbench reference", "Submission Reference") },
 
-    /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Coverage Request â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ Coverage Request â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */
     { doc: "Coverage Request", domain: "Coverage / Peril", subEntity: "Peril Group",
       label: "Line of business", detail: "Insurance line being written (e.g. Commercial Property)", critical: "Yes", kind: "text",
       value: meta.coverageType, confidence: 99,
@@ -1152,7 +1167,7 @@ export function buildFieldCatalog(
     { doc: "Coverage Request", domain: "Coverage / Peril", subEntity: "Peril Group",
       label: "Mandatory Endorsements (LMA5393 / LMA5400/5401)", detail: "LMA5393 (Communicable Disease Exclusion), LMA5401 (Property Cyber & Data Exclusion). Select all endorsements attached to the submission.", critical: "Yes", kind: "multi-select",
       value: "LMA5393, LMA5401 attached", confidence: 96,
-      options: ["LMA5393 â€” Communicable Disease Exclusion", "LMA5400 â€” Cyber & Data Exclusion", "LMA5401 â€” Property Cyber & Data Exclusion", "LMA5404 â€” Sanctions", "LMA5567 â€” Electronic Data Exclusion", "Other"],
+      options: ["LMA5393 — Communicable Disease Exclusion", "LMA5400 — Cyber & Data Exclusion", "LMA5401 — Property Cyber & Data Exclusion", "LMA5404 — Sanctions", "LMA5567 — Electronic Data Exclusion", "Other"],
       docRef: ref("Coverage Request", 2, "Endorsement schedule", "Mandatory Endorsements") },
     { doc: "Coverage Request", domain: "Coverage / Peril", subEntity: "Coverage Term",
       label: "Cyber / Electronic Data Coverage", detail: "Status of Cyber and Electronic Data coverage under this submission (ref. LMA5401).", critical: "As applicable", kind: "select",
@@ -1197,7 +1212,7 @@ export function buildFieldCatalog(
       docRef: ref("Coverage Request", 2, "NFIP eligibility", "NFIP Eligibility") },
     { doc: "Coverage Request", domain: "Coverage / Peril", subEntity: "Peril Group",
       label: "TRIA Election", detail: "TRIA must be offered at every quote. Election (purchased or declined) is confirmed at binding only.", critical: "Yes", kind: "display",
-      value: "TBD â€” confirmed at binding", confidence: 0,
+      value: "TBD — confirmed at binding", confidence: 0,
       docRef: ref("Coverage Request", 2, "TRIA election", "TRIA Election") },
     { doc: "Coverage Request", domain: "Coverage / Peril", subEntity: "Peril Group",
       label: "Boiler & Machinery (B&M) - Included/Excluded", detail: "Equipment breakdown coverage status on the submission", critical: "As applicable", kind: "select",
@@ -1214,10 +1229,10 @@ export function buildFieldCatalog(
       options: ["RCV", "ACV", "Agreed Value", "Functional Replacement Cost"],
       docRef: ref("Coverage Request", 2, "Valuation basis clause", "Valuation Method") },
 
-    /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Primary Policy â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ Primary Policy â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */
     { doc: "Primary Policy", domain: "Coverage / Peril", subEntity: "Peril Group",
       label: "Lead Primary Policy carrier and policy number", detail: "Carrier name and policy number for the lead primary layer this excess policy follows", critical: "Yes", kind: "text",
-      value: "Swiss Re Corporate Solutions â€” NAP 2006902 00", confidence: 90,
+      value: "Swiss Re Corporate Solutions — NAP 2006902 00", confidence: 90,
       docRef: ref("Primary Policy", 1, "Declarations page", "Lead Primary Carrier") },
     { doc: "Primary Policy", domain: "Coverage / Peril", subEntity: "Coverage Term",
       label: "Underlying limits ($)", detail: "Total limits of all underlying policies that must be exhausted before this layer responds", critical: "QBE Layer dependent", kind: "currency",
@@ -1249,10 +1264,10 @@ export function buildFieldCatalog(
       docRef: ref("Primary Policy", 1, "Rating basis", "Rate per $100 TIV") },
     { doc: "Primary Policy", domain: "Financial / Account Reference", subEntity: "Premium Transaction",
       label: "Expiring premium ($)", detail: "Premium from the most recently expiring policy term; pricing benchmark for renewals", critical: "Yes", kind: "currency",
-      value: isRenewal ? "698,000" : "Not applicable â€” new business", confidence: isRenewal ? 89 : 74,
+      value: isRenewal ? "698,000" : "Not applicable — new business", confidence: isRenewal ? 89 : 74,
       docRef: ref("Primary Policy", 1, "Expiring terms", "Expiring Premium") },
 
-    /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Loss History â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ Loss History â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */
     { doc: "Loss History", domain: "Financial / Account Reference", subEntity: "Premium Transaction",
       label: "Loss ratio (claims / premium)", detail: "Total incurred losses divided by earned premium for the loss history period", critical: "Yes", kind: "text",
       value: extras.lossHistory.lossRatio, confidence: 92,
@@ -1260,16 +1275,18 @@ export function buildFieldCatalog(
     { doc: "Loss History", domain: "Financial / Account Reference", subEntity: "Financial Transaction",
       label: "Number of claims in period", detail: "Total reported claims across the loss run years provided", critical: "Yes", kind: "numeric",
       value: String(extras.lossHistory.claimsCount ?? 3), confidence: 95,
-      docRef: ref("Loss History", 1, "Claim count", "Number of Claims") },
+      docRef: isHeartland
+        ? ref("Loss History", 1, "Claim count — CSV row count", "Number of Claims", "csv", undefined, undefined, HL_CSV)
+        : ref("Loss History", 1, "Claim count", "Number of Claims") },
     { doc: "Loss History", domain: "Financial / Account Reference", subEntity: "Financial Transaction",
-      label: "Claims History", detail: "Full narrative loss history â€” claim count, incurred, paid, reserves, cause of loss, and location", critical: "Yes", kind: "select",
+      label: "Claims History", detail: "Full narrative loss history — claim count, incurred, paid, reserves, cause of loss, and location", critical: "Yes", kind: "select",
       options: [
-        "Favorable â€” no losses over $50K; attritional only",
-        "Moderate â€” 1â€“3 losses over $50K; no frequency concern",
-        "Adverse â€” recurring losses or single loss >$250K",
-        "Clean â€” no claims in period",
+        "Favorable — no losses over $50K; attritional only",
+        "Moderate — 1—3 losses over $50K; no frequency concern",
+        "Adverse — recurring losses or single loss >$250K",
+        "Clean — no claims in period",
       ],
-      value: "Favorable â€” no losses over $50K; attritional only", confidence: 90,
+      value: "Favorable — no losses over $50K; attritional only", confidence: 90,
       docRef: ref("Loss History", 1, "Loss narrative", "Claims History") },
     { doc: "Loss History", domain: "Financial / Account Reference", subEntity: "Financial Transaction",
       label: "Largest single loss ($)", detail: "Dollar amount of the single largest claim in the loss history", critical: "Yes", kind: "currency",
@@ -1278,12 +1295,12 @@ export function buildFieldCatalog(
     { doc: "Loss History", domain: "Financial / Account Reference", subEntity: "Financial Transaction",
       label: "Loss run years provided", detail: "Number of policy years covered by the loss run", critical: "Yes", kind: "select",
       options: [
-        "3 years: 2023â€“2025",
-        "5 years: 2021â€“2025",
-        "7 years: 2019â€“2025",
-        "10 years: 2016â€“2025",
+        "3 years: 2023—2025",
+        "5 years: 2021—2025",
+        "7 years: 2019—2025",
+        "10 years: 2016—2025",
       ],
-      value: extras.lossHistory.lossRunYears ?? "5 years: 2021â€“2025", confidence: 96,
+      value: extras.lossHistory.lossRunYears ?? "5 years: 2021—2025", confidence: 96,
       docRef: ref("Loss History", 1, "Loss run period", "Loss Run Years") },
     { doc: "Loss History", domain: "Financial / Account Reference", subEntity: "Financial Transaction",
       label: "Net losses (5-year total)", detail: "Total net paid losses across the 5-year loss run period after recoveries and deductibles", critical: "Yes", kind: "currency",
@@ -1298,7 +1315,7 @@ export function buildFieldCatalog(
       value: extras.lossHistory.ibnr ?? "$0.20M", confidence: 91,
       docRef: ref("Loss History", 1, "Reserve total", "Outstanding Reserves / IBNR") },
 
-    /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Statement of Values â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ Statement of Values â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */
     { doc: "Statement of Values", domain: "Location / Insurable Object", subEntity: "Building / Structure",
       label: "Total insured value (TIV)", detail: "Sum of all building, contents, BI, and M&E values across all insured locations", critical: "Yes", kind: "currency",
       value: meta.tivFull, confidence: 94,
@@ -1348,7 +1365,7 @@ export function buildFieldCatalog(
       value: meta.locations, confidence: 96,
       docRef: ref("Statement of Values", 1, "Location count header", "Location Count") },
     { doc: "Statement of Values", domain: "Location / Insurable Object", subEntity: "Building / Structure",
-      label: "Number of buildings", detail: "Total count of individual insured structures â€” a single location may have multiple buildings", critical: "Yes", kind: "numeric",
+      label: "Number of buildings", detail: "Total count of individual insured structures — a single location may have multiple buildings", critical: "Yes", kind: "numeric",
       value: `${extras.sov.stats.locationCount * 2}`, confidence: 89,
       docRef: ref("Statement of Values", 1, "Building count", "Number of Buildings") },
     { doc: "Statement of Values", domain: "Location / Insurable Object", subEntity: "Building / Structure",
@@ -1360,12 +1377,12 @@ export function buildFieldCatalog(
       value: "USD", confidence: 99, options: ["USD", "CAD", "GBP", "EUR"],
       docRef: ref("Statement of Values", 1, "Currency declaration", "Currency of Values") },
     { doc: "Statement of Values", domain: "Location / Insurable Object", subEntity: "Building / Structure",
-      label: "Construction type (Frame / JM / MNC / FR)", detail: "RMS/ATC construction class â€” Frame (1), Joisted Masonry (2), Non-Combustible (3/3C), Masonry Non-Combustible (4C), Fire Resistive (5)", critical: "Yes", kind: "text",
+      label: "Construction type (Frame / JM / MNC / FR)", detail: "RMS/ATC construction class — Frame (1), Joisted Masonry (2), Non-Combustible (3/3C), Masonry Non-Combustible (4C), Fire Resistive (5)", critical: "Yes", kind: "text",
       value: `${idx.topConstructionClass} (${idx.constructionClassPct}% of TIV)`, confidence: 91,
       docRef: ref("Statement of Values", 2, "Construction class breakdown", "Top Construction Class") },
     { doc: "Statement of Values", domain: "Location / Insurable Object", subEntity: "Building / Structure",
       label: "Year Built (Portfolio Range)", detail: "Account-level summary derived from SOV data. Shows the oldest to newest construction year across all scheduled locations.", critical: "Yes", kind: "display",
-      value: extras.sov.yearBuiltRange ?? `1965â€“2018 across ${meta.locations} locations`, confidence: 88,
+      value: extras.sov.yearBuiltRange ?? `1965—2018 across ${meta.locations} locations`, confidence: 88,
       docRef: ref("Statement of Values", 2, "Year built column", "Year Built") },
     { doc: "Statement of Values", domain: "Location / Insurable Object", subEntity: "Building / Structure",
       label: "Year of upgrade / renovation", detail: "Year of the most recent significant structural renovation", critical: "Yes", kind: "numeric",
@@ -1380,16 +1397,16 @@ export function buildFieldCatalog(
       value: "4", confidence: 84,
       docRef: ref("Statement of Values", 2, "Occupied floors column", "Floors Occupied") },
     { doc: "Statement of Values", domain: "Location / Insurable Object", subEntity: "Building / Structure",
-      label: "Roof type / covering material", detail: "Roof surface material â€” affects wind and hail pricing", critical: "Yes", kind: "text",
+      label: "Roof type / covering material", detail: "Roof surface material — affects wind and hail pricing", critical: "Yes", kind: "text",
       value: "Built-up / single-ply with gutters", confidence: 85,
       docRef: ref("Statement of Values", 2, "Roof covering column", "Roof Type") },
     { doc: "Statement of Values", domain: "Location / Insurable Object", subEntity: "Building / Structure",
       label: "Roof age", detail: "Age in years of the current roof installation; older roofs attract higher wind/hail loadings", critical: "Yes", kind: "numeric",
       value: "12", confidence: 80,
-      flagReason: "Roof age above 10 years â€” confirm condition with risk engineering",
+      flagReason: "Roof age above 10 years — confirm condition with risk engineering",
       docRef: ref("Statement of Values", 2, "Roof age column", "Roof Age") },
     { doc: "Statement of Values", domain: "Location / Insurable Object", subEntity: "Location",
-      label: "Roof geometry (flat / gable / hip)", detail: "Structural shape of the roof â€” affects wind uplift vulnerability", critical: "Yes", kind: "select",
+      label: "Roof geometry (flat / gable / hip)", detail: "Structural shape of the roof — affects wind uplift vulnerability", critical: "Yes", kind: "select",
       value: "Flat", confidence: 87, options: ["Flat", "Gable", "Hip"],
       docRef: ref("Statement of Values", 2, "Roof geometry column", "Roof Geometry") },
     { doc: "Statement of Values", domain: "Location / Insurable Object", subEntity: "Building / Structure",
@@ -1429,7 +1446,7 @@ export function buildFieldCatalog(
       value: "Provided for all scheduled locations", confidence: 93,
       docRef: ref("Statement of Values", 2, "ZIP column", "Postal Code") },
 
-    /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Risk Engineering Report â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ Risk Engineering Report â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */
     { doc: "Risk Engineering Report", domain: "Coverage / Peril", subEntity: "Peril Group",
       label: "Engineering Document", detail: "Engineering inspection or risk improvement survey; influences pricing and may generate subjectivities", critical: "Flag if missing", kind: "text",
       value: "Risk improvement survey dated 04/2025 provided", confidence: 90,
@@ -1443,30 +1460,30 @@ export function buildFieldCatalog(
       value: "Wet Pipe", confidence: 89, options: ["Wet Pipe", "Dry Pipe", "Pre-Action", "Deluge"],
       docRef: ref("Risk Engineering Report", 1, "Fire protection section", "Sprinkler Type") },
     { doc: "Risk Engineering Report", domain: "Location / Insurable Object", subEntity: "Building / Structure",
-      label: "Protection class (1â€“10)", detail: "ISO Public Protection Classification â€” 1 is best (hydrants and fire station within 1,000 ft), 10 is no protection", critical: "Yes", kind: "numeric",
+      label: "Protection class (1—10)", detail: "ISO Public Protection Classification — 1 is best (hydrants and fire station within 1,000 ft), 10 is no protection", critical: "Yes", kind: "numeric",
       value: "3", confidence: 91,
       docRef: ref("Risk Engineering Report", 1, "Public protection", "Protection Class") },
     { doc: "Risk Engineering Report", domain: "Location / Insurable Object", subEntity: "Building / Structure",
       label: "Ground level mechanical / electrical equipment flag", detail: "Whether critical HVAC, electrical switchgear, or other M&E sits at ground level, increasing flood severity", critical: "Yes", kind: "select",
       value: "Y", confidence: 81, options: ["Y", "N"],
-      flagReason: "Ground-level M&E present â€” elevated flood severity",
+      flagReason: "Ground-level M&E present — elevated flood severity",
       docRef: ref("Risk Engineering Report", 2, "Flood exposure notes", "Ground Level M&E") },
     { doc: "Risk Engineering Report", domain: "Location / Insurable Object", subEntity: "Building / Structure",
       label: "Roof equipment bracing", detail: "Whether rooftop HVAC units and other equipment are anchored against wind uplift", critical: "Yes", kind: "select",
-      value: "Y â€” anchored to curbs", confidence: 80, options: ["Y â€” anchored to curbs", "N", "Partial"],
+      value: "Y — anchored to curbs", confidence: 80, options: ["Y — anchored to curbs", "N", "Partial"],
       docRef: ref("Risk Engineering Report", 2, "Wind exposure notes", "Roof Equipment Bracing") },
     { doc: "Risk Engineering Report", domain: "Location / Insurable Object", subEntity: "Building / Structure",
-      label: "Opening Protection", detail: "Rating of window and door protection against wind-borne debris â€” None, Basic, Hurricane", critical: "Yes", kind: "select",
+      label: "Opening Protection", detail: "Rating of window and door protection against wind-borne debris — None, Basic, Hurricane", critical: "Yes", kind: "select",
       value: "Basic", confidence: 82, options: ["None", "Basic", "Hurricane"],
       docRef: ref("Risk Engineering Report", 2, "Wind exposure notes", "Opening Protection") },
     { doc: "Risk Engineering Report", domain: "Location / Insurable Object", subEntity: "Building / Structure",
-      label: "Wind Mitigation Features", detail: "Structural features reducing wind damage â€” shutters, reinforced garage doors, hip roof", critical: "Yes", kind: "text",
+      label: "Wind Mitigation Features", detail: "Structural features reducing wind damage — shutters, reinforced garage doors, hip roof", critical: "Yes", kind: "text",
       value: "Reinforced roof-to-wall connections; no shutters", confidence: 78,
       docRef: ref("Risk Engineering Report", 2, "Wind mitigation", "Wind Mitigation Features") },
     { doc: "Risk Engineering Report", domain: "Location / Insurable Object", subEntity: "Building / Structure",
-      label: "Fire Alarm", detail: "Type and monitoring status of the fire alarm system â€” Local, Central Station, or None", critical: "Yes", kind: "select",
-      value: "Central Station monitored â€” UL listed", confidence: 90,
-      options: ["Central Station monitored â€” UL listed", "Local", "None"],
+      label: "Fire Alarm", detail: "Type and monitoring status of the fire alarm system — Local, Central Station, or None", critical: "Yes", kind: "select",
+      value: "Central Station monitored — UL listed", confidence: 90,
+      options: ["Central Station monitored — UL listed", "Local", "None"],
       docRef: ref("Risk Engineering Report", 1, "Fire protection section", "Fire Alarm") },
     { doc: "Risk Engineering Report", domain: "Location / Insurable Object", subEntity: "Building / Structure",
       label: "Soft Story", detail: "Floor significantly weaker than those above it, increasing seismic vulnerability", critical: "Yes", kind: "select",
@@ -1474,13 +1491,13 @@ export function buildFieldCatalog(
       docRef: ref("Risk Engineering Report", 2, "Seismic notes", "Soft Story") },
     { doc: "Risk Engineering Report", domain: "Location / Insurable Object", subEntity: "Building / Structure",
       label: "Foundation Bolting", detail: "Whether the wooden frame is bolted to the foundation to reduce seismic loss", critical: "Yes", kind: "select",
-      value: "N/A â€” non-frame construction", confidence: 77,
-      options: ["Y", "N", "N/A â€” non-frame construction"],
+      value: "N/A — non-frame construction", confidence: 77,
+      options: ["Y", "N", "N/A — non-frame construction"],
       docRef: ref("Risk Engineering Report", 2, "Seismic notes", "Foundation Bolting") },
     { doc: "Risk Engineering Report", domain: "Location / Insurable Object", subEntity: "Building / Structure",
       label: "Hazard score", detail: "Overall hazard grade produced by the risk engineering assessment", critical: "Yes", kind: "numeric",
       value: `${idx.hazardScore}`, confidence: 87,
-      flagReason: idx.hazardScore >= 70 ? "Above watch threshold â€” verify construction data" : undefined,
+      flagReason: idx.hazardScore >= 70 ? "Above watch threshold — verify construction data" : undefined,
       docRef: ref("Risk Engineering Report", 2, "Overall hazard score summary", "Hazard Score") },
   ];
 }

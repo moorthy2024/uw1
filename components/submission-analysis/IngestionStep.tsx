@@ -71,8 +71,7 @@ function makePdfPages(meta: SubmissionMeta, idx: SubmissionIndexEntry, extras: S
   const tiv    = meta.tivFull;
   const naics  = meta.naics;
   const inc    = meta.inceptionDate;
-
-  return {
+  const pages: Record<string, PdfPage> = {
     "Application": {
       title: "Commercial Property Application",
       pageCount: 6,
@@ -289,6 +288,8 @@ function makePdfPages(meta: SubmissionMeta, idx: SubmissionIndexEntry, extras: S
       ),
     },
   };
+
+  return pages;
 }
 
 function Row({ label, val, hl, match }: { label: string; val: string; hl: string; match: string }) {
@@ -301,6 +302,308 @@ function Row({ label, val, hl, match }: { label: string; val: string; hl: string
   );
 }
 
+/* Canvas-based document viewer with polygon bbox highlight */
+function DocCanvasViewer({ page, bbox, highlightLabel, searchText, docType, pageNum = 1, sheet }: {
+  page: PdfPage;
+  bbox?: { x1: number; y1: number; x2: number; y2: number } | null;
+  highlightLabel: string;
+  searchText?: string;
+  docType: DocType;
+  pageNum?: number;
+  sheet?: string;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const PW = page.pageWidth ?? 595;
+  const PH = page.pageHeight ?? 842;
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !page.renderCanvas) return;
+    // Skip render if pageNum is out of range for this document — this can happen
+    // for one render cycle when citation states update but the page object is stale.
+    if (pageNum < 1 || pageNum > page.pageCount) return;
+    canvas.width = PW;
+    canvas.height = PH;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, PW, PH);
+
+    let cancelled = false;
+
+    const drawBboxRect = (b: { x1: number; y1: number; x2: number; y2: number }) => {
+      // After pdfjs renders it may resize the canvas for a different page —
+      // normalize from expected document space to actual canvas pixels.
+      const cw = ctx.canvas.width;
+      const ch = ctx.canvas.height;
+      const sx = cw / PW, sy = ch / PH;
+      const sx1 = b.x1 * sx, sy1 = b.y1 * sy;
+      const sx2 = b.x2 * sx, sy2 = b.y2 * sy;
+      ctx.save();
+      ctx.fillStyle = "rgba(251, 191, 36, 0.28)";
+      ctx.fillRect(sx1, sy1, sx2 - sx1, sy2 - sy1);
+      ctx.strokeStyle = "rgba(217, 119, 6, 0.95)";
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(sx1, sy1, sx2 - sx1, sy2 - sy1);
+      ctx.fillStyle = "rgba(217, 119, 6, 0.95)";
+      [[sx1, sy1], [sx2 - 6, sy1], [sx1, sy2 - 6], [sx2 - 6, sy2 - 6]].forEach(([px, py]) => {
+        ctx.fillRect(px, py, 6, 6);
+      });
+      ctx.restore();
+    };
+
+    // After the page renders, locate and draw the bbox highlight.
+    // Search priority for PDF/canvas docs:
+    //   1. searchText (field value — verbatim extracted text, most specific)
+    //   2. highlightLabel (field display label, e.g. "Named Insured")
+    //   3. hardcoded bbox (image type, or if both text searches miss)
+    const afterRender = async () => {
+      if (cancelled) return;
+      let effectiveBbox: { x1: number; y1: number; x2: number; y2: number } | null = null;
+
+      console.log("[DocCanvasViewer] afterRender — searchText:", searchText, "highlightLabel:", highlightLabel, "hasFindTextBbox:", !!page.findTextBbox);
+
+      if (page.findTextBbox) {
+        if (searchText) {
+          effectiveBbox = await page.findTextBbox(searchText, pageNum);
+          console.log("[DocCanvasViewer] searchText result:", effectiveBbox);
+        }
+        if (!effectiveBbox && highlightLabel) {
+          effectiveBbox = await page.findTextBbox(highlightLabel, pageNum);
+          console.log("[DocCanvasViewer] highlightLabel result:", effectiveBbox);
+        }
+      }
+      if (!effectiveBbox) effectiveBbox = bbox ?? null;
+
+      console.log("[DocCanvasViewer] effectiveBbox:", effectiveBbox, "cancelled:", cancelled, "canvas:", ctx.canvas.width, "x", ctx.canvas.height);
+      if (!cancelled && effectiveBbox) drawBboxRect(effectiveBbox);
+    };
+
+    const result = page.renderCanvas(ctx, PW, PH, pageNum, sheet);
+    if (result instanceof Promise) {
+      result.then(() => afterRender());
+    } else {
+      afterRender();
+    }
+
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, bbox, PW, PH, pageNum, sheet, highlightLabel, searchText]);
+
+  const viewerBg =
+    docType === "xlsx" || docType === "csv" ? "#2D5016" :
+    docType === "docx" ? "#2B3A5C" :
+    docType === "image" ? "#1C1C1C" : "#525252";
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+      <div className="flex-1 overflow-auto flex justify-center items-start p-3 min-h-0" style={{ background: viewerBg }}>
+        <canvas
+          ref={canvasRef}
+          style={{ width: "100%", maxWidth: PW, height: "auto", boxShadow: "0 4px 20px rgba(0,0,0,0.4)" }}
+        />
+      </div>
+      {bbox && highlightLabel && (
+        <div className="flex-shrink-0 px-3 py-1.5 bg-amber-50 border-t border-amber-200 flex items-center gap-2 text-[10px] text-amber-800">
+          <svg width="12" height="12" viewBox="0 0 12 12" className="flex-shrink-0">
+            <rect x="1" y="1" width="10" height="10" rx="1" fill="rgba(251,191,36,0.35)" stroke="rgb(217,119,6)" strokeWidth="1.5"/>
+          </svg>
+          <span style={{ fontWeight: 600 }}>Polygon citation:</span>
+          <span>{highlightLabel}</span>
+          <span className="ml-auto font-mono text-[9px] text-amber-600">
+            ({bbox.x1},{bbox.y1}) → ({bbox.x2},{bbox.y2})
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* HTML-based viewer for XLSX, DOCX, and CSV real documents */
+function DocHtmlViewer({ page, docType, highlightLabel, searchText, sheet, pageNum }: {
+  page: PdfPage & Record<string, unknown>;
+  docType: DocType;
+  highlightLabel: string;
+  searchText?: string;
+  sheet?: string;
+  pageNum?: number;
+}) {
+  const sheetHtml  = page.sheetHtml  as Record<string, string> | undefined;
+  const sheetNames = page.sheetNames as string[]              | undefined;
+  const docHtml    = page.docHtml    as string                | undefined;
+  const csvRows    = page.csvRows    as string[][]            | undefined;
+  const csvFields  = page.csvFields  as string[]              | undefined;
+
+  const xlsxRef = useRef<HTMLDivElement>(null);
+  const docxRef = useRef<HTMLDivElement>(null);
+
+  // XLSX: after HTML renders, highlight cells whose text matches highlightLabel
+  const activeHtml = sheetHtml && sheetNames
+    ? (sheetHtml[sheet ?? sheetNames[0]] ?? sheetHtml[sheetNames[0]])
+    : undefined;
+
+  // XLSX: try field value first (verbatim in spreadsheet), then field label as fallback
+  useEffect(() => {
+    const el = xlsxRef.current;
+    if (!el) return;
+    const table = el.querySelector("table");
+    if (!table) return;
+    el.querySelectorAll("[data-hl]").forEach(node => {
+      (node as HTMLElement).style.removeProperty("background");
+      (node as HTMLElement).style.removeProperty("outline");
+      node.removeAttribute("data-hl");
+    });
+    const terms = [searchText, highlightLabel].filter(Boolean) as string[];
+    const cellCount = table.querySelectorAll("td, th").length;
+    console.log("[DocHtmlViewer:xlsx] renderer: SheetJS → DOM | cells:", cellCount, "| search terms:", terms);
+    let first: HTMLElement | null = null;
+    for (const term of terms) {
+      table.querySelectorAll("td, th").forEach(cell => {
+        if (first) return;
+        if (cell.textContent?.toLowerCase().includes(term.toLowerCase())) {
+          const c = cell as HTMLElement;
+          c.style.background = "rgba(251,191,36,0.45)";
+          c.style.outline    = "2px solid rgb(217,119,6)";
+          c.setAttribute("data-hl", "1");
+          first = c;
+          console.log("[DocHtmlViewer:xlsx] match found — term:", `"${term}"`, "| cell text:", `"${c.textContent?.trim()}"`);
+        }
+      });
+      if (first) break;
+    }
+    if (!first) console.warn("[DocHtmlViewer:xlsx] no cell matched any of:", terms);
+    if (first) (first as HTMLElement).scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [activeHtml, highlightLabel, searchText]);
+
+  // DOCX: scroll into view the first highlighted mark after render
+  useEffect(() => {
+    const el = docxRef.current;
+    if (!el) return;
+    const marks = el.querySelectorAll("mark");
+    const resolvedTerm = marks.length > 0
+      ? (el.querySelector("mark")?.textContent ?? "")
+      : "(no match)";
+    console.log(
+      "[DocHtmlViewer:docx] renderer: mammoth.js → HTML",
+      "| searchText:", `"${searchText ?? ""}"`,
+      "| highlightLabel:", `"${highlightLabel}"`,
+      "| matched term →", `"${resolvedTerm}"`,
+      "| <mark> hits:", marks.length,
+      "| doc length:", docHtml?.length ?? 0, "chars"
+    );
+    if (marks.length === 0) {
+      console.warn("[DocHtmlViewer:docx] no <mark> found — neither searchText nor highlightLabel appear verbatim");
+    }
+    const mark = marks[0];
+    if (mark) mark.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [docHtml, highlightLabel, searchText]);
+
+  // XLSX ─────────────────────────────────────────────────────────────────
+  if (docType === "xlsx" && sheetHtml && sheetNames) {
+    const activeName = sheet ?? sheetNames[0];
+    const html = sheetHtml[activeName] ?? sheetHtml[sheetNames[0]];
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden min-h-0 bg-white">
+        {/* Sheet tab bar */}
+        <div className="flex-shrink-0 flex gap-0 border-b border-[#C8C8C8] bg-[#F2F2F2] px-2 pt-1">
+          {sheetNames.map(name => (
+            <div key={name} className={`px-3 py-1 text-[10px] cursor-default border border-b-0 rounded-t ${name === activeName ? "bg-white border-[#C8C8C8] text-[#217346] font-bold" : "border-transparent text-[#4B5563]"}`}>
+              {name}
+            </div>
+          ))}
+        </div>
+        {/* Sheet content — ref lets useEffect traverse the DOM after render */}
+        <div
+          ref={xlsxRef}
+          className="flex-1 overflow-auto p-2 text-[11px]"
+          dangerouslySetInnerHTML={{ __html: `<style>table{border-collapse:collapse;font-family:Calibri,sans-serif;font-size:11px}td,th{border:1px solid #D0D0D0;padding:2px 6px;white-space:nowrap}tr:nth-child(even){background:#FAFAFA}th{background:#217346;color:#fff;font-weight:600}</style>${html}` }}
+        />
+        <div className="flex-shrink-0 px-3 py-1.5 bg-amber-50 border-t border-amber-200 text-[10px] text-amber-800 flex items-center gap-2">
+          <svg width="12" height="12" viewBox="0 0 12 12" className="flex-shrink-0">
+            <rect x="1" y="1" width="10" height="10" rx="1" fill="rgba(251,191,36,0.35)" stroke="rgb(217,119,6)" strokeWidth="1.5"/>
+          </svg>
+          <span style={{ fontWeight: 600 }}>Sheet:</span><span>{activeName}</span>
+          {highlightLabel && <><span className="ml-2" style={{ fontWeight: 600 }}>Citation:</span><span>{highlightLabel}</span></>}
+        </div>
+      </div>
+    );
+  }
+
+  // DOCX ─────────────────────────────────────────────────────────────────
+  if (docType === "docx" && docHtml) {
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden min-h-0 bg-[#E8EDF2]">
+        {/* ref on scroll container so scrollIntoView works correctly */}
+        <div ref={docxRef} className="flex-1 overflow-auto p-6 flex justify-center min-h-0">
+          <div
+            className="bg-white w-full max-w-[816px] min-h-[1056px] p-12 shadow-lg text-[12px] leading-relaxed"
+            style={{ fontFamily: "Calibri, sans-serif" }}
+            dangerouslySetInnerHTML={{
+              __html: (() => {
+                const style = `<style>p{margin:0 0 8px}h1,h2,h3{margin:12px 0 4px;font-weight:700}table{border-collapse:collapse;width:100%}td,th{border:1px solid #D0D0D0;padding:4px 8px}mark{background:rgba(251,191,36,0.45);padding:1px 3px;border-radius:2px;border:1px solid rgba(217,119,6,0.6)}</style>`;
+                // Try terms in priority order: field value (verbatim extracted text),
+                // then highlight label. Stop at the first term that actually appears
+                // in the document — avoids injecting <mark> for a non-matching string.
+                const tryMark = (term: string) => {
+                  const esc = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                  const out = docHtml.replace(new RegExp(`(${esc})`, "gi"), "<mark>$1</mark>");
+                  return out !== docHtml ? out : null;
+                };
+                const terms = [searchText, highlightLabel].filter(Boolean) as string[];
+                let marked = docHtml;
+                for (const term of terms) {
+                  const result = tryMark(term);
+                  if (result) { marked = result; break; }
+                }
+                return style + marked;
+              })()
+            }}
+          />
+        </div>
+        <div className="flex-shrink-0 px-3 py-1.5 bg-amber-50 border-t border-amber-200 text-[10px] text-amber-800 flex items-center gap-2">
+          <svg width="12" height="12" viewBox="0 0 12 12" className="flex-shrink-0">
+            <rect x="1" y="1" width="10" height="10" rx="1" fill="rgba(251,191,36,0.35)" stroke="rgb(217,119,6)" strokeWidth="1.5"/>
+          </svg>
+          <span style={{ fontWeight: 600 }}>Page:</span><span>{pageNum ?? 1}</span>
+          {highlightLabel && <><span className="ml-2" style={{ fontWeight: 600 }}>Citation:</span><span>{highlightLabel}</span></>}
+        </div>
+      </div>
+    );
+  }
+
+  // CSV ──────────────────────────────────────────────────────────────────
+  if (docType === "csv" && csvRows) {
+    const headers = csvFields ?? (csvRows[0] as string[]);
+    const rows = csvFields ? csvRows : csvRows.slice(1);
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden min-h-0 bg-[#1E1E2E]">
+        <div className="flex-1 overflow-auto p-3 min-h-0">
+          <table className="w-full border-collapse text-[10px] font-mono">
+            <thead>
+              <tr>{headers.map((h, i) => <th key={i} className="bg-[#3D3D5C] text-[#A0A0C0] text-left px-2 py-1 border border-[#4D4D70] font-bold whitespace-nowrap">{h}</th>)}</tr>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr key={ri} className={ri % 2 === 0 ? "bg-[#22223A]" : "bg-[#1E1E30]"}>
+                  {(row as string[]).map((cell, ci) => (
+                    <td key={ci} className="text-[#D0D0D0] px-2 py-1 border border-[#2D2D48] whitespace-nowrap">{cell}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex-shrink-0 px-3 py-1.5 bg-amber-50 border-t border-amber-200 text-[10px] text-amber-800 flex items-center gap-2">
+          <span style={{ fontWeight: 600 }}>CSV</span>
+          {highlightLabel && <><span className="ml-2" style={{ fontWeight: 600 }}>Citation:</span><span>{highlightLabel}</span></>}
+          <span className="ml-auto text-amber-600">{rows.length} rows</span>
+        </div>
+      </div>
+    );
+  }
+
+  return <div className="flex-1 flex items-center justify-center text-[#9B9B98] text-[12px]">Loading document…</div>;
+}
+
 /* Field labels repeat across documents — key on the full hierarchy path */
 function fieldKey(f: CatalogField) {
   return `${f.doc}|${f.domain}|${f.subEntity}|${f.label}`;
@@ -310,7 +613,7 @@ function fieldKey(f: CatalogField) {
 function CitationModal({ docRef, citNum, pdfPages, meta, onClose }: {
   docRef: CatalogDocRef;
   citNum: number;
-  pdfPages: Record<string, { title: string; pageCount: number; content: (hl: string) => ReactNode }>;
+  pdfPages: Record<string, PdfPage>;
   meta: { id: string; namedInsured: string; submissionDate: string };
   onClose: () => void;
 }) {
@@ -336,6 +639,23 @@ function CitationModal({ docRef, citNum, pdfPages, meta, onClose }: {
   };
 
   const renderViewer = () => {
+    if (docData?.renderCanvas) {
+      const resolvedDocType: DocType = IMAGE_DOCS.has(docRef.doc) ? "image"
+        : EXCEL_DOCS.has(docRef.doc) ? "xlsx"
+        : WORD_DOCS.has(docRef.doc) ? "docx"
+        : docRef.doc.endsWith(".csv") ? "csv"
+        : "pdf";
+      return (
+        <DocCanvasViewer
+          page={docData}
+          bbox={docRef.bbox}
+          highlightLabel={docRef.highlightLabel}
+          docType={resolvedDocType}
+          pageNum={page}
+          sheet={docRef.sheet}
+        />
+      );
+    }
     if (!docData) {
       return (
         <div className="flex-1 flex items-center justify-center bg-[#FAFAF9]">
@@ -1486,6 +1806,10 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
   const [previewDoc, setPreviewDoc] = useState<string>("Application");
   const [previewPage, setPreviewPage] = useState<number>(1);
   const [previewHighlight, setPreviewHighlight] = useState<string>("");
+  const [previewSearchText, setPreviewSearchText] = useState<string | undefined>(undefined);
+  const [previewBbox, setPreviewBbox] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const [previewSheet, setPreviewSheet] = useState<string | undefined>(undefined);
+  const [previewDocUrl, setPreviewDocUrl] = useState<string | undefined>(undefined);
   const [citationModal, setCitationModal] = useState<{ ref: CatalogDocRef; citNum: number } | null>(null);
   const [attachmentClassify, setAttachmentClassify] = useState<Record<string, string>>({});
   const [showFollowUp, setShowFollowUp] = useState(false);
@@ -1499,15 +1823,43 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
   // Active document type — set when a citation is opened
   const [activeDocType, setActiveDocType] = useState<DocType | null>(null);
 
-  const openCitation = useCallback((ref: CatalogDocRef) => {
+  const openCitation = useCallback((ref: CatalogDocRef, fieldValue?: string) => {
     setPreviewDoc(ref.doc);
     setPreviewPage(ref.page);
     setPreviewHighlight(ref.highlightLabel);
+    setPreviewSearchText(fieldValue || undefined);
     if (ref.docType) setActiveDocType(ref.docType);
+    setPreviewBbox(ref.bbox ?? null);
+    setPreviewSheet(ref.sheet);
+    setPreviewDocUrl(ref.docUrl);
+
+    const rendererMap: Record<string, string> = {
+      pdf:   "pdfjs-dist (canvas render + getTextContent text search)",
+      xlsx:  "SheetJS (sheet_to_html → DOM cell highlight)",
+      docx:  "mammoth.js (convertToHtml → <mark> injection)",
+      image: "HTMLImageElement → Canvas drawImage (bbox overlay)",
+      csv:   "PapaParse (table render → DOM cell highlight)",
+    };
+    const docType = ref.docType ?? "pdf";
+    console.groupCollapsed(
+      `%c[Citation] %c${ref.doc}%c — ${docType.toUpperCase()} p.${ref.page}${ref.sheet ? ` / sheet: ${ref.sheet}` : ""}`,
+      "color:#0076BC;font-weight:bold",
+      "color:#1d4ed8;font-weight:bold;text-decoration:underline",
+      "color:#6b7280",
+    );
+    console.log("Document type :", docType);
+    console.log("Renderer      :", rendererMap[docType] ?? docType);
+    console.log("Doc URL       :", ref.docUrl ?? "(mock — no URL)");
+    console.log("Page / Sheet  :", ref.page, ref.sheet ? `| sheet: ${ref.sheet}` : "");
+    console.log("Field value   :", fieldValue ?? "(none)");
+    console.log("Highlight label:", ref.highlightLabel);
+    console.log("Excerpt       :", ref.excerpt);
+    if (ref.bbox) console.log("Hard bbox     :", ref.bbox);
+    console.groupEnd();
   }, []);
 
   // On-demand document page — loads lazily, cached per doc
-  const { docPage, docLoading } = useDocumentPage(meta.id, previewDoc, getPdfPages);
+  const { docPage, docLoading } = useDocumentPage(meta.id, previewDoc, getPdfPages, previewDocUrl, activeDocType ?? undefined);
 
   // Field streaming hook — ready for SSE; currently mirrors full field list
   const { isStreaming } = useFieldStream(meta.id, fields);
@@ -1581,7 +1933,7 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
     if (!focusField) return;
     setSelectedField(focusField);
     setActiveDoc(focusField.doc);
-    if (focusField.docRef) openCitation(focusField.docRef);
+    if (focusField.docRef) openCitation(focusField.docRef, focusField.value);
   };
 
   const summary = (
@@ -1962,7 +2314,7 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
                           <div className="flex items-center gap-1 flex-shrink-0 self-start">
                             {f.docRef && (
                               <button
-                                onClick={(e) => { e.stopPropagation(); openCitation(f.docRef!); }}
+                                onClick={(e) => { e.stopPropagation(); openCitation(f.docRef!, f.value); }}
                                 className={`h-6 px-1.5 rounded border flex items-center gap-0.5 text-[9px] transition-colors ${previewDoc === f.docRef.doc && previewHighlight === f.docRef.highlightLabel ? "bg-[#0076BC] border-[#0076BC] text-white" : "border-[#C2DFF4] bg-[#EEF6FF] text-[#0076BC] hover:bg-[#C2DFF4]"}`}
                                 title={`View in ${f.docRef.doc}, page ${f.docRef.page}`}
                                 style={{ fontWeight: 700 }}>
@@ -2024,6 +2376,35 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
                 <div className="text-[11px] text-[#9B9B98]">Loading document…</div>
               </div>
             </div>
+          );
+        }
+        if (docPage?.renderCanvas) {
+          return (
+            <DocCanvasViewer
+              page={docPage}
+              bbox={previewBbox}
+              highlightLabel={previewHighlight}
+              searchText={previewSearchText}
+              docType={resolvedType}
+              pageNum={previewPage}
+              sheet={previewSheet}
+            />
+          );
+        }
+        // Real XLSX / DOCX / CSV documents loaded from blob/local URL
+        const hasHtmlContent = (docPage as Record<string,unknown> | null)?.sheetHtml
+          || (docPage as Record<string,unknown> | null)?.docHtml
+          || (docPage as Record<string,unknown> | null)?.csvRows;
+        if (hasHtmlContent && docPage) {
+          return (
+            <DocHtmlViewer
+              page={docPage as PdfPage & Record<string, unknown>}
+              docType={resolvedType}
+              highlightLabel={previewHighlight}
+              searchText={previewSearchText}
+              sheet={previewSheet}
+              pageNum={previewPage}
+            />
           );
         }
         if (resolvedType === "image") {

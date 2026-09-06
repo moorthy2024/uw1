@@ -2047,13 +2047,16 @@ export function HubActionsPage() {
     return () => window.removeEventListener("closeDetailView", handler);
   }, []);
 
+  if (detailId) {
+    return (
+      <div className="h-full overflow-auto bg-white">
+        <SubmissionAnalysis submissionId={detailId} onClose={() => setDetailId(null)} />
+      </div>
+    );
+  }
+
   return (
-    <div className="h-full flex flex-col relative" style={{ backgroundColor: "#F9FAFB" }}>
-      {detailId && (
-        <div className="absolute inset-0 z-20 overflow-auto bg-white">
-          <SubmissionAnalysis submissionId={detailId} onClose={() => setDetailId(null)} />
-        </div>
-      )}
+    <div className="h-full flex flex-col" style={{ backgroundColor: "#F9FAFB" }}>
       <HubPageHeader title="Recommended Actions" subtitle="AI-prioritised action items for your queue" icon={Sparkles} />
       <div className="flex-1 overflow-hidden">
         <RecommendedActionsContent onOpen={openSubmission} />
@@ -2120,14 +2123,16 @@ export function Hub() {
     return () => window.removeEventListener("closeDetailView", handler);
   }, []);
 
-  return (
-    <div className="h-full overflow-auto relative" style={{ backgroundColor: "#F9FAFB" }}>
-      {detailId && (
-        <div className="absolute inset-0 z-20 overflow-auto bg-white">
-          <SubmissionAnalysis submissionId={detailId} onClose={closeSubmission} />
-        </div>
-      )}
+  if (detailId) {
+    return (
+      <div className="h-full overflow-auto bg-white">
+        <SubmissionAnalysis submissionId={detailId} onClose={closeSubmission} />
+      </div>
+    );
+  }
 
+  return (
+    <div className="h-full overflow-auto" style={{ backgroundColor: "#F9FAFB" }}>
       <div className="p-5 flex flex-col gap-4">
 
         {/* ── 2 × 2 Tile Grid ── */}

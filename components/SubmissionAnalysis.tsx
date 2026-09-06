@@ -56,9 +56,12 @@ export function SubmissionAnalysis({ submissionId, onInsightChange, onActionsCha
   const params = useParams();
   const rawId = submissionId || params.id;
   const id: string | undefined = Array.isArray(rawId) ? rawId[0] : (rawId || undefined);
-  const { data: submissionRecord } = useSubmission(id);
+  const { data: submissionRecord, isLoading: submissionLoading } = useSubmission(id);
   const meta = submissionRecord?.meta ?? null;
-  const idx: SubmissionIndexEntry | undefined = id ? SUBMISSION_INDEX[id] : undefined;
+  // Real API submissions carry their own indexEntry from the transformer.
+  // Mock submissions fall back to the static SUBMISSION_INDEX lookup.
+  const idx: SubmissionIndexEntry | undefined =
+    submissionRecord?.indexEntry ?? (id ? SUBMISSION_INDEX[id] : undefined);
 
   const defaultStep = idx ? statusStepIndex(idx.processingStatus) : 0;
   const [activeStep, setActiveStep] = useState(defaultStep);
@@ -106,6 +109,15 @@ export function SubmissionAnalysis({ submissionId, onInsightChange, onActionsCha
     [navigateToStep]
   );
   const stepActionsValue = useCallback((items: ActionItem[]) => setStepActions(items), []);
+
+  if (submissionLoading) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-3 bg-[#F9F9F8]">
+        <div className="w-6 h-6 rounded-full border-2 border-[#0076BC] border-t-transparent animate-spin" />
+        <p className="text-sm text-[#9B9B98]">Loading submission…</p>
+      </div>
+    );
+  }
 
   if (!meta || !idx) {
     return (

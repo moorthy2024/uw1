@@ -1,13 +1,16 @@
 "use client";
+import { useState, useEffect } from "react";
 import type { SubmissionMeta, SubmissionExtras } from "./types";
 import type { CatalogField } from "./types";
-// import useSWR from "swr"; // uncomment when API endpoints are ready
+import type { SubmissionIndexEntry } from "../CustomerTable";
 import { submissionData, DEFAULT_EXTRAS, submissionExtras, buildFieldCatalog } from "./mock-data";
 import { SUBMISSION_INDEX } from "../CustomerTable";
+import { transformSubmissionToRecord } from "@/lib/submissionTransformer";
 
 export interface SubmissionRecord {
   meta: SubmissionMeta;
   extras: SubmissionExtras;
+  indexEntry?: SubmissionIndexEntry; // Present for real API submissions; absent for mock
 }
 
 export function useSubmission(submissionId: string | undefined): {
@@ -15,18 +18,73 @@ export function useSubmission(submissionId: string | undefined): {
   isLoading: boolean;
   error: string | null;
 } {
-  // ── MOCK IMPLEMENTATION ──────────────────────────────────────────────
-  // TODO: Replace this block with a real API call, e.g.:
-  //   const { data, isLoading, error } = useSWR(
-  //     submissionId ? `/api/submissions/${submissionId}` : null,
-  //     fetcher
-  //   );
-  //   return { data, isLoading, error };
-  // ────────────────────────────────────────────────────────────────────
-  const meta = submissionId ? submissionData[submissionId] ?? null : null;
-  if (!meta) return { data: null, isLoading: false, error: null };
-  const extras: SubmissionExtras = { ...DEFAULT_EXTRAS, ...submissionExtras[submissionId ?? ""] };
-  return { data: { meta, extras }, isLoading: false, error: null };
+  // Initialise from mock data synchronously — so known mock IDs render instantly
+  const [data, setData] = useState<SubmissionRecord | null>(() => {
+    if (!submissionId) return null;
+    const meta = submissionData[submissionId] ?? null;
+    if (!meta) return null;
+    const extras: SubmissionExtras = { ...DEFAULT_EXTRAS, ...submissionExtras[submissionId] };
+    return { meta, extras };
+  });
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    // Only show loading spinner for IDs not in the mock set
+    if (!submissionId) return false;
+    return !submissionData[submissionId];
+  });
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!submissionId) {
+      setData(null);
+      setIsLoading(false);
+      return;
+    }
+
+    // Mock submission — already set synchronously above, nothing to fetch
+    if (submissionData[submissionId]) {
+      console.log(`[useSubmission] Mock data used for ${submissionId}`);
+      return;
+    }
+
+    // Real API submission — fetch from backend via proxy route
+    console.group(`[useSubmission] Fetching real API submission — id: ${submissionId}`);
+    setIsLoading(true);
+    setError(null);
+
+    fetch(`/api/submissions/${submissionId}`)
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        }
+        const apiData = await res.json();
+
+        console.log("[useSubmission] Raw API response:", apiData);
+        const record = transformSubmissionToRecord(apiData);
+        console.log("[useSubmission] Transformed SubmissionRecord:", record);
+        console.log("[useSubmission] Meta (from API):", {
+          accountName:   record.meta.accountName,
+          broker:        record.meta.broker,
+          tivFull:       record.meta.tivFull,
+          inceptionDate: record.meta.inceptionDate,
+          submissionDate:record.meta.submissionDate,
+          coverageType:  record.meta.coverageType,
+          locations:     record.meta.locations,
+        });
+        console.log("[useSubmission] IndexEntry (from API + static):", record.indexEntry);
+        console.groupEnd();
+
+        setData(record);
+        setIsLoading(false);
+      })
+      .catch((err: Error) => {
+        console.error("[useSubmission] Fetch error:", err.message);
+        console.groupEnd();
+        setError(err.message);
+        setIsLoading(false);
+      });
+  }, [submissionId]);
+
+  return { data, isLoading, error };
 }
 
 export function useSubmissionMeta(id: string | undefined) {
@@ -50,23 +108,19 @@ export function useSubmissionLossHistory(id: string | undefined) {
 }
 
 // ── Per-step API hooks ───────────────────────────────────────────────────────
-// Each hook is the single swap point for its step's data source.
-// Replace the mock body with useSWR(...) to wire in a real API.
 
 export function useIngestionFields(submissionId: string | undefined): {
   fields: CatalogField[] | null;
   isLoading: boolean;
   error: string | null;
 } {
-  // TODO: Uncomment when /api/submissions/{id}/fields is available:
+  // TODO: Replace with real API call when /api/v1/submissions/{id}/extractions is ready:
   // const { data, isLoading, error } = useSWR<CatalogField[]>(
-  //   submissionId ? `/api/submissions/${submissionId}/fields` : null,
-  //   (url: string) => fetch(url).then(r => r.json()),
-  //   { revalidateOnFocus: false, dedupingInterval: 300_000 },
+  //   submissionId ? `/api/v1/submissions/${submissionId}/extractions` : null,
+  //   (url: string) => fetch(url).then(r => r.json()).then(transformExtractionFields),
   // );
   // return { fields: data ?? null, isLoading, error: error?.message ?? null };
 
-  // Mock fallback — remove once API is live
   const { data } = useSubmission(submissionId);
   const idx = submissionId ? SUBMISSION_INDEX[submissionId] : undefined;
   if (!data || !idx) return { fields: null, isLoading: false, error: null };

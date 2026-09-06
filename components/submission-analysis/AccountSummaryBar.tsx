@@ -12,7 +12,7 @@ export function AccountSummaryBar({ onClose }: { onClose?: () => void }) {
   const facts = [
     { label: "Policy Start", value: meta.inceptionDate,                       Icon: MapPin    },
     { label: "TIV",          value: meta.tivFull,                              Icon: BarChart3 },
-    { label: "Broker",       value: `${meta.broker}, ${meta.brokerageHouse}`,  Icon: Briefcase },
+    { label: "Broker",       value: meta.brokerageHouse === "[Static Data]" ? meta.broker : `${meta.broker}, ${meta.brokerageHouse}`, Icon: Briefcase },
   ];
   return (
     <div className="flex-shrink-0 bg-white border-b border-[#E0E8FF] px-6 py-3 flex items-center gap-6">
@@ -42,7 +42,10 @@ export function AccountSummaryBar({ onClose }: { onClose?: () => void }) {
               <Icon style={{ width: 11, height: 11, color: "#94A3B8", flexShrink: 0 }} />
               <span className="text-[9px] uppercase tracking-widest" style={{ fontWeight: 700, color: "#94A3B8" }}>{label}</span>
             </div>
-            <div className="text-[11px] whitespace-nowrap" style={{ fontWeight: 600, color: "#0D1B2E" }}>{value}</div>
+            {value === "[Static Data]"
+              ? <div className="text-[11px] whitespace-nowrap italic" style={{ color: "#9CA3AF" }}>[Static Data]</div>
+              : <div className="text-[11px] whitespace-nowrap" style={{ fontWeight: 600, color: "#0D1B2E" }}>{value}</div>
+            }
           </div>
         ))}
       </div>

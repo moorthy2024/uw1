@@ -13,9 +13,12 @@ export type Criticality = "Yes" | "As applicable" | "Flag if missing" | "QBE Lay
 export interface CatalogDocRef {
   doc: string;
   page: number;
+  sheet?: string;
+  docUrl?: string;
   excerpt: string;
   highlightLabel: string;
   docType?: DocType;
+  bbox?: { x1: number; y1: number; x2: number; y2: number };
 }
 
 export interface CatalogField {
@@ -83,10 +86,15 @@ export const CRITICALITY_STYLE: Record<Criticality, string> = {
   "QBE Layer dependent":   "bg-[#EEF2FF] text-[#4F46E5] border-[#C7D2FE]",
 };
 
-export type DocType = "pdf" | "xlsx" | "docx" | "image";
+export type DocType = "pdf" | "xlsx" | "docx" | "image" | "csv";
 
 export interface PdfPage {
-  title:     string;
-  pageCount: number;
-  content:   (highlight: string) => import("react").ReactNode;
+  title:        string;
+  pageCount:    number;
+  content:      (highlight: string) => import("react").ReactNode;
+  pageWidth?:   number;
+  pageHeight?:  number;
+  renderCanvas?: (ctx: CanvasRenderingContext2D, w: number, h: number, page: number, sheet?: string) => void | Promise<void>;
+  /** PDF-only: locate text in the document and return canvas-space bbox. Preferred over hardcoded bbox. */
+  findTextBbox?: (text: string, pageNum: number) => Promise<{ x1: number; y1: number; x2: number; y2: number } | null>;
 }
