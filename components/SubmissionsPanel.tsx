@@ -25,6 +25,7 @@ import { AIAgentPane } from "./AIAgentPane";
 import type { ActionItem } from "./SubmissionTypes";
 import { fmtTIV } from "./SubmissionHelpers";
 import { PortfolioRecommendations } from "./PortfolioRecommendations";
+import { useSubmissions } from "./submission-analysis/useSubmissions";
 
 // ── Broker breakdown per stage ──────────────────────────────────
 function brokersAtStatuses(statuses: ProcessingStatus[]): { broker: string; count: number }[] {
@@ -466,12 +467,22 @@ export function SubmissionsPanel() {
     setSelectedId(id);
   };
 
-  const accounts = useMemo(() => [...new Set(SUBMISSION_CARDS.map(s => s.account))].sort(), []);
-  const brokers = useMemo(() => [...new Set(SUBMISSION_CARDS.map(s => s.broker))].sort(), []);
-  const statuses = useMemo(() => [...new Set(SUBMISSION_CARDS.map(s => s.processingStatus))], []);
+  // Fetch real submissions from API and merge with mock data
+  const { cards: apiCards } = useSubmissions();
+  const mergedCards = useMemo<SubmissionCard[]>(() => {
+    if (!apiCards.length) return SUBMISSION_CARDS;
+    const apiIds = new Set(apiCards.map(c => c.id));
+    const merged = [...apiCards, ...SUBMISSION_CARDS.filter(c => !apiIds.has(c.id))];
+    console.log("[SubmissionsPanel] Merged cards — API:", apiCards.length, "mock:", merged.length - apiCards.length, "total:", merged.length);
+    return merged;
+  }, [apiCards]);
+
+  const accounts = useMemo(() => [...new Set(mergedCards.map(s => s.account))].sort(), [mergedCards]);
+  const brokers  = useMemo(() => [...new Set(mergedCards.map(s => s.broker))].sort(),  [mergedCards]);
+  const statuses = useMemo(() => [...new Set(mergedCards.map(s => s.processingStatus))], [mergedCards]);
 
   const filtered = useMemo(() => {
-    let list = [...SUBMISSION_CARDS];
+    let list = [...mergedCards];
     if (activeTab === "new-business") list = list.filter(s => s.dataStatus === "Ready" && s.submissionType === "New Business");
     if (activeTab === "renewals")     list = list.filter(s => s.dataStatus === "Ready" && s.submissionType === "Renewal");
     if (searchQ) {
@@ -753,6 +764,7 @@ export function SubmissionsPanel() {
             externalUwView={uwFilter}
             externalStageStatuses={stageFilter ? STAGE_STATUSES[stageFilter.stageKey] : undefined}
             externalSubItemKey={stageFilter?.subItem ? `${stageFilter.stageKey}|${stageFilter.subItem}` : undefined}
+            apiSubmissions={apiCards}
           />
         )}
       </div>

@@ -19,6 +19,8 @@ interface CustomerTableProps {
   externalAccount?: string;
   externalStageStatuses?: ProcessingStatus[];
   externalSubItemKey?: string;
+  /** Real API submissions — merged with mock data (API takes priority for matching IDs) */
+  apiSubmissions?: SubmissionCard[];
 }
 
 type SortField =
@@ -1150,10 +1152,25 @@ function CompactSubmissionCard({ sub, isSelected, onClick }: {
 }
 
 // ── Main export ──
+// Adapt a SubmissionCard (from API) to the internal Submission shape
+// by filling in fields not yet provided by the API with static defaults.
+function cardToSubmission(card: SubmissionCard): Submission {
+  return {
+    ...card,
+    brokerTrend:             "flat",
+    brokerTrendPct:          0,
+    accretiveness:           "Medium",
+    communicationChannel:    "Email",
+    communicationReceivedAt: card.receivedDate,
+    book:                    "not-started",
+    processingPattern:       "Low Touch",
+  };
+}
+
 export function CustomerTable({
   onSubmissionSelect, selectedId, filterType = "all",
   hideControls, externalSearch, externalBroker, externalStatus, externalUwView, externalAccount,
-  externalStageStatuses, externalSubItemKey,
+  externalStageStatuses, externalSubItemKey, apiSubmissions,
 }: CustomerTableProps = {}) {
   const [sortField, setSortField] = useState<SortField>("inceptionDate");
   const [sortDir, setSortDir] = useState<SortDirection>("asc");
@@ -1177,7 +1194,16 @@ export function CustomerTable({
 
   const isReady = (s: Submission) => s.dataStatus === "Ready";
 
-  let rows = submissions.filter(s => {
+  // Merge API submissions with mock — API takes priority for matching IDs
+  const apiRows = (apiSubmissions ?? []).map(cardToSubmission);
+  const apiIds  = new Set(apiRows.map(s => s.id));
+  const allSubmissions = [...apiRows, ...submissions.filter(s => !apiIds.has(s.id))];
+
+  if (apiSubmissions?.length) {
+    console.log("[CustomerTable] Rendering", apiRows.length, "API submissions +", allSubmissions.length - apiRows.length, "mock submissions");
+  }
+
+  let rows = allSubmissions.filter(s => {
     if (filterType === "new-business") return isReady(s) && (s.submissionType === "New Business" || s.submissionType === "Remarket");
     if (filterType === "renewals") return isReady(s) && s.submissionType === "Renewal";
     return true;
