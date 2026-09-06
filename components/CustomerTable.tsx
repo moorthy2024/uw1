@@ -1401,7 +1401,7 @@ export function CustomerTable({
             <tbody className="divide-y divide-[#EEF2FF]">
               {paged.map(sub => {
                 const uw = getUW(sub);
-                const isClickable = INTERACTIVE_ACCOUNTS.has(sub.account);
+                const isClickable = true;
 
                 if (!isClickable) {
                   return (

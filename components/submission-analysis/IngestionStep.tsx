@@ -604,6 +604,98 @@ function DocHtmlViewer({ page, docType, highlightLabel, searchText, sheet, pageN
   return <div className="flex-1 flex items-center justify-center text-[#9B9B98] text-[12px]">Loading document…</div>;
 }
 
+/* Fetches and renders an HTML email from blob storage with citation highlight */
+function HtmlEmailViewer({ docUrl, excerpt, highlightLabel }: {
+  docUrl: string;
+  excerpt: string;
+  highlightLabel: string;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
+
+  useEffect(() => {
+    if (!docUrl) return;
+    setLoading(true);
+    setFetchError(false);
+
+    console.group("[HtmlEmailViewer] Fetching email HTML");
+    console.log("Proxy URL:", `/api/doc-proxy?url=${docUrl.slice(0, 80)}…`);
+    console.log("Citation text:", excerpt);
+    console.log("Field label:", highlightLabel);
+
+    fetch(`/api/doc-proxy?url=${encodeURIComponent(docUrl)}`)
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.text();
+      })
+      .then(html => {
+        if (!containerRef.current) return;
+        console.log("[HtmlEmailViewer] HTML loaded, length:", html.length, "chars");
+
+        containerRef.current.innerHTML = html;
+
+        // Highlight the citation chunk by finding text nodes
+        const terms = [excerpt, highlightLabel].filter(Boolean);
+        let highlighted = false;
+        for (const term of terms) {
+          if (highlighted) break;
+          const walk = (node: Node): boolean => {
+            if (node.nodeType === Node.TEXT_NODE) {
+              const text = node.textContent ?? "";
+              const idx = text.toLowerCase().indexOf(term.toLowerCase());
+              if (idx === -1) return false;
+              const mark = document.createElement("mark");
+              mark.style.cssText = "background:rgba(251,191,36,0.45);border:1px solid rgb(217,119,6);border-radius:2px;padding:1px 3px";
+              mark.textContent = text.slice(idx, idx + term.length);
+              const after = document.createTextNode(text.slice(idx + term.length));
+              node.textContent = text.slice(0, idx);
+              node.parentNode?.insertBefore(mark, node.nextSibling);
+              node.parentNode?.insertBefore(after, mark.nextSibling);
+              mark.scrollIntoView({ behavior: "smooth", block: "center" });
+              console.log(`[HtmlEmailViewer] Citation highlighted — term: "${term.slice(0, 60)}"`);
+              return true;
+            }
+            for (const child of Array.from(node.childNodes)) {
+              if (walk(child)) return true;
+            }
+            return false;
+          };
+          highlighted = walk(containerRef.current);
+        }
+        if (!highlighted) console.warn("[HtmlEmailViewer] Citation text not found in email:", terms);
+        console.groupEnd();
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error("[HtmlEmailViewer] Fetch error:", err.message);
+        console.groupEnd();
+        setFetchError(true);
+        setLoading(false);
+      });
+  }, [docUrl, excerpt, highlightLabel]);
+
+  if (loading) return <div className="flex-1 flex items-center justify-center text-[#9B9B98] text-[12px]">Loading email…</div>;
+  if (fetchError) return <div className="flex-1 flex items-center justify-center text-[#9B9B98] text-[12px]">Could not load email document</div>;
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+      <div
+        ref={containerRef}
+        className="flex-1 overflow-auto p-6 bg-white text-[12px] leading-relaxed"
+        style={{ fontFamily: "Arial, sans-serif" }}
+      />
+      <div className="flex-shrink-0 px-3 py-1.5 bg-amber-50 border-t border-amber-200 text-[10px] text-amber-800 flex items-center gap-2">
+        <svg width="12" height="12" viewBox="0 0 12 12" className="flex-shrink-0">
+          <rect x="1" y="1" width="10" height="10" rx="1" fill="rgba(251,191,36,0.35)" stroke="rgb(217,119,6)" strokeWidth="1.5"/>
+        </svg>
+        <span style={{ fontWeight: 600 }}>Email</span>
+        {highlightLabel && <><span className="ml-2" style={{ fontWeight: 600 }}>Citation:</span><span>{highlightLabel}</span></>}
+      </div>
+    </div>
+  );
+}
+
 /* Field labels repeat across documents — key on the full hierarchy path */
 function fieldKey(f: CatalogField) {
   return `${f.doc}|${f.domain}|${f.subEntity}|${f.label}`;
@@ -656,6 +748,23 @@ function CitationModal({ docRef, citNum, pdfPages, meta, onClose }: {
         />
       );
     }
+    // HTML email from extraction API — render via proxy + citation highlight
+    if (docRef.docType === "html" && docRef.docUrl) {
+      console.log("[CitationModal] Opening HTML email preview", {
+        doc:      docRef.doc,
+        url:      docRef.docUrl?.slice(0, 80) + "…",
+        citation: docRef.excerpt?.slice(0, 60),
+        field:    docRef.highlightLabel,
+      });
+      return (
+        <HtmlEmailViewer
+          docUrl={docRef.docUrl}
+          excerpt={docRef.excerpt}
+          highlightLabel={docRef.highlightLabel}
+        />
+      );
+    }
+
     if (!docData) {
       return (
         <div className="flex-1 flex items-center justify-center bg-[#FAFAF9]">

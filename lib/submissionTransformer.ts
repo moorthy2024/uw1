@@ -263,10 +263,114 @@ export function transformSubmissionToRecord(api: ApiSubmission): SubmissionRecor
     needByDate:              STATIC,
   };
 
-  // Extras: use DEFAULT_EXTRAS as the base — all static until stage APIs arrive
-  const extras: SubmissionExtras = { ...DEFAULT_EXTRAS };
+  // Extras: keep SOV/Loss History from DEFAULT_EXTRAS; reset policyDetails to blank
+  // so Account Overview shows "-" instead of mock values.
+  // Extraction API will supplement policyDetails fields where available.
+  const extras: SubmissionExtras = {
+    ...DEFAULT_EXTRAS,
+    policyDetails: {
+      policyNumber:       "-",
+      expirationDate:     "-",
+      commission:         "-",
+      generalHazardLevel: "-",
+      aopDeductible:      "-",
+      buildingLimit:      "-",
+      contentsLimit:      "-",
+      businessLimit:      "-",
+      equipmentBreakdown: false,
+      certifiedTerrorism: false,
+    },
+  };
 
   return { meta, extras, indexEntry };
+}
+
+// ── Extraction API types ───────────────────────────────────────────────────
+export interface ApiExtractionField {
+  field_name: string;
+  field_value: string | number | null;
+  confidence_score: number;
+  chunk_number: number | null;
+  chunk: string | null;
+  is_verified: boolean;
+}
+
+export interface ApiExtractionDocument {
+  name: string;
+  url: string;
+  tags: string[];
+  doc_type: string;
+  fields: ApiExtractionField[];
+}
+
+export interface ApiExtractionRecord {
+  id: string;
+  submission_id: string;
+  created_at: string;
+  extracted_at: string;
+  updated_at: string;
+  Extracted_fields: Array<{ document: ApiExtractionDocument }>;
+  source_document_count: number;
+  source_chunk_count: number;
+}
+
+export interface ExtractionValueEntry {
+  value: string;
+  confidence: number;
+  docRef?: {
+    doc: string;
+    page: number;
+    docUrl: string;
+    excerpt: string;
+    highlightLabel: string;
+    docType: string;
+  };
+}
+
+// ── Build a field-name → value lookup from the extraction API response ─────
+export function buildExtractionValueMap(
+  extractionResponse: ApiExtractionRecord[]
+): Record<string, ExtractionValueEntry> {
+  const map: Record<string, ExtractionValueEntry> = {};
+  if (!Array.isArray(extractionResponse)) return map;
+
+  for (const record of extractionResponse) {
+    for (const entry of record.Extracted_fields ?? []) {
+      const doc = entry.document;
+      const docName = doc.tags?.[0] ?? doc.name ?? "Document";
+      const docUrl  = doc.url ?? "";
+      const docType = doc.doc_type ?? "html";
+
+      for (const field of doc.fields ?? []) {
+        const value = field.field_value != null ? String(field.field_value) : "";
+        map[field.field_name] = {
+          value,
+          confidence: Math.round((field.confidence_score ?? 0) * 100),
+          ...(field.chunk
+            ? {
+                docRef: {
+                  doc:            docName,
+                  page:           field.chunk_number ?? 1,
+                  docUrl,
+                  excerpt:        field.chunk,
+                  highlightLabel: field.field_name,
+                  docType,
+                },
+              }
+            : {}),
+        };
+      }
+    }
+  }
+
+  console.log(
+    "[buildExtractionValueMap] Fields mapped:",
+    Object.entries(map)
+      .filter(([, v]) => v.value !== "")
+      .map(([k, v]) => `${k}: "${v.value}" (${v.confidence}%)`)
+  );
+
+  return map;
 }
 
 // ── Transform API list item → SubmissionCard (for the table) ──────────────
@@ -286,25 +390,25 @@ export function transformSubmissionToCard(api: ApiSubmission): SubmissionCard {
   return {
     id:                     api.id,
     account:                api.insured_name ?? "-",
-    homeOffice:             STATIC,
-    accountIndustry:        STATIC,
+    homeOffice:             "-",
+    accountIndustry:        "-",
     industryClassification: mapAppetite(enrichment?.appetite ?? null),
     broker:                 api.broker_name ?? "-",
-    brokerContact:          STATIC,
+    brokerContact:          "-",
     brokerBoundRate:        0,
     submissionType:         mapSalesforceType(enrichment?.salesforce_type ?? null),
     processingStatus,
     receivedDate:           formatDate(api.received_at),
-    needByDate:             STATIC,
+    needByDate:             "-",
     inceptionDate:          formatDate(api.policy_start),
     hazardScore:            0,
     hazardGrade:            "A",
     totalTIVm:              api.total_tiv ? api.total_tiv / 1_000_000 : 0,
-    topConstructionClass:   STATIC,
+    topConstructionClass:   "-",
     constructionClassPct:   0,
     sprinkleredPct:         0,
     successPropensity:      0,
-    successPropensityDrivers: STATIC,
+    successPropensityDrivers: "-",
     occupancyByTIV:         [],
     assignedUW:             api.assigned_uw_name ?? "-",
     aiPriorityScore:        0,
@@ -312,7 +416,7 @@ export function transformSubmissionToCard(api: ApiSubmission): SubmissionCard {
     dataStatus:             deriveDataStatus(api.documents_received),
     occupancyAppetite:      [],
     constructionAppetite:   [],
-    paidClaims5yr:          STATIC,
+    paidClaims5yr:          "-",
     ...workflow,
   };
 }

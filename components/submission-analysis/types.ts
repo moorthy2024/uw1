@@ -86,7 +86,7 @@ export const CRITICALITY_STYLE: Record<Criticality, string> = {
   "QBE Layer dependent":   "bg-[#EEF2FF] text-[#4F46E5] border-[#C7D2FE]",
 };
 
-export type DocType = "pdf" | "xlsx" | "docx" | "image" | "csv";
+export type DocType = "pdf" | "xlsx" | "docx" | "image" | "csv" | "html";
 
 export interface PdfPage {
   title:        string;
