@@ -78,6 +78,7 @@ function mapStatus(apiStatus: string | null): ProcessingStatus {
   const map: Record<string, ProcessingStatus> = {
     "new":                    "not-processed",
     "received":               "not-processed",
+    "submission created":     "not-processed",
     "follow_up":              "follow-up-required",
     "follow-up-required":     "follow-up-required",
     "ready_ops":              "ready-for-ops",

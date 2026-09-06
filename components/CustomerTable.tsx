@@ -1194,14 +1194,9 @@ export function CustomerTable({
 
   const isReady = (s: Submission) => s.dataStatus === "Ready";
 
-  // Merge API submissions with mock — API takes priority for matching IDs
-  const apiRows = (apiSubmissions ?? []).map(cardToSubmission);
-  const apiIds  = new Set(apiRows.map(s => s.id));
-  const allSubmissions = [...apiRows, ...submissions.filter(s => !apiIds.has(s.id))];
-
-  if (apiSubmissions?.length) {
-    console.log("[CustomerTable] Rendering", apiRows.length, "API submissions +", allSubmissions.length - apiRows.length, "mock submissions");
-  }
+  // API submissions only
+  const allSubmissions = (apiSubmissions ?? []).map(cardToSubmission);
+  console.log("[CustomerTable] Rendering", allSubmissions.length, "API submissions");
 
   let rows = allSubmissions.filter(s => {
     if (filterType === "new-business") return isReady(s) && (s.submissionType === "New Business" || s.submissionType === "Remarket");
