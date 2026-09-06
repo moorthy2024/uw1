@@ -10,11 +10,9 @@ import {
 const qbeLogo = "/assets/qbe-logo.png";
 import {
   CustomerTable,
-  SUBMISSION_CARDS,
   PROCESSING_STATUS_CONFIG,
   DATA_STATUS_CFG,
   AppetiteBucketBar,
-  STAGE_ROLLUP,
   INTERACTIVE_ACCOUNTS,
   SORT_PRIORITY,
   type SubmissionCard,
@@ -28,11 +26,12 @@ import { PortfolioRecommendations } from "./PortfolioRecommendations";
 import { useSubmissions } from "./submission-analysis/useSubmissions";
 
 // ── Broker breakdown per stage ──────────────────────────────────
-function brokersAtStatuses(statuses: ProcessingStatus[]): { broker: string; count: number }[] {
+function brokersAtStatuses(cards: SubmissionCard[], statuses: ProcessingStatus[]): { broker: string; count: number }[] {
   const counts: Record<string, number> = {};
-  SUBMISSION_CARDS.forEach(s => {
+  cards.forEach(s => {
     if (statuses.includes(s.processingStatus as ProcessingStatus)) {
-      counts[s.broker] = (counts[s.broker] ?? 0) + 1;
+      const broker = s.broker || "-";
+      counts[broker] = (counts[broker] ?? 0) + 1;
     }
   });
   return Object.entries(counts)
@@ -66,19 +65,69 @@ const SUBITEM_PREDS: Record<string, (s: SubmissionCard) => boolean> = {
 };
 
 // ── Book snapshot KPIs ──────────────────────────────────────────
-// Real-time book snapshot — one tile per workflow stage, derived from actual submission records.
-const snapshotKPIs = [
-  { key: "ingestion", label: "INGESTION",         icon: Inbox,          total: STAGE_ROLLUP.ingestion.total, items: STAGE_ROLLUP.ingestion.items, brokers: brokersAtStatuses(["not-processed","follow-up-required","ready-for-ops"]) },
-  { key: "triage",    label: "TRIAGE",            icon: Filter,         total: STAGE_ROLLUP.triage.total,    items: STAGE_ROLLUP.triage.items,    brokers: brokersAtStatuses(["ready-for-uw"]) },
-  { key: "analysis",  label: "UW ANALYSIS",       icon: SearchCheck,    total: STAGE_ROLLUP.analysis.total,  items: STAGE_ROLLUP.analysis.items,  brokers: brokersAtStatuses(["uw-analysis"]) },
-  { key: "review",    label: "UW REVIEW",         icon: ClipboardCheck, total: STAGE_ROLLUP.review.total,    items: STAGE_ROLLUP.review.items,    brokers: brokersAtStatuses(["uw-review"]) },
-  { key: "decision",  label: "CUSTOMER DECISION", icon: Handshake,      total: STAGE_ROLLUP.decision.total,  items: STAGE_ROLLUP.decision.items,  brokers: brokersAtStatuses(["customer-decision"]) },
-];
+// Computed dynamically from API cards inside the component — see buildSnapshotKPIs()
+function buildSnapshotKPIs(cards: SubmissionCard[]) {
+  const count = (statuses: ProcessingStatus[]) =>
+    cards.filter(s => statuses.includes(s.processingStatus as ProcessingStatus)).length;
+  const countWorkflow = (field: keyof SubmissionCard, value: string) =>
+    cards.filter(s => s[field] === value).length;
+  return [
+    {
+      key: "ingestion", label: "INGESTION", icon: Inbox,
+      total: count(["not-processed","follow-up-required","ready-for-ops"]),
+      items: [
+        { label: "Received",       count: countWorkflow("ingested",  "complete") },
+        { label: "Data Extracted", count: countWorkflow("processed", "complete") },
+      ],
+      brokers: brokersAtStatuses(cards, ["not-processed","follow-up-required","ready-for-ops"]),
+    },
+    {
+      key: "triage", label: "TRIAGE", icon: Filter,
+      total: count(["ready-for-uw"]),
+      items: [
+        { label: "Awaiting Triage", count: countWorkflow("triaged", "in-progress") + countWorkflow("triaged", "pending") },
+        { label: "Cleared",         count: countWorkflow("triaged", "complete") },
+      ],
+      brokers: brokersAtStatuses(cards, ["ready-for-uw"]),
+    },
+    {
+      key: "analysis", label: "UW ANALYSIS", icon: SearchCheck,
+      total: count(["uw-analysis"]),
+      items: [
+        { label: "In Analysis",        count: countWorkflow("uwAnalysis",     "in-progress") },
+        { label: "In CAT Modelling",   count: countWorkflow("modellingReady", "in-progress") },
+        { label: "Modelling Returned", count: countWorkflow("modellingReady", "complete") },
+        { label: "In Rating",          count: countWorkflow("raterGenerated", "in-progress") },
+      ],
+      brokers: brokersAtStatuses(cards, ["uw-analysis"]),
+    },
+    {
+      key: "review", label: "UW REVIEW", icon: ClipboardCheck,
+      total: count(["uw-review"]),
+      items: [
+        { label: "Quote Ready", count: cards.filter(s => s.quoteReady === "complete" && s.quoted !== "complete").length },
+        { label: "Quoted",      count: countWorkflow("quoted",        "complete") },
+        { label: "Manuscript",  count: cards.filter(s => s.formManuscript === "in-progress" || s.formManuscript === "complete").length },
+      ],
+      brokers: brokersAtStatuses(cards, ["uw-review"]),
+    },
+    {
+      key: "decision", label: "CUSTOMER DECISION", icon: Handshake,
+      total: count(["customer-decision"]),
+      items: [
+        { label: "Awaiting Issuance", count: cards.filter(s => s.bind === "complete" && s.issue !== "complete").length },
+        { label: "Issued",            count: countWorkflow("issue", "complete") },
+      ],
+      brokers: brokersAtStatuses(cards, ["customer-decision"]),
+    },
+  ];
+}
 
 // ── Pipeline Strip ──────────────────────────────────────────────
 function PipelineStrip({
-  activeStage, activeSubItem, onStageClick, onSubItemClick,
+  kpis, activeStage, activeSubItem, onStageClick, onSubItemClick,
 }: {
+  kpis: ReturnType<typeof buildSnapshotKPIs>;
   activeStage: string | null;
   activeSubItem: string | null;
   onStageClick: (key: string) => void;
@@ -87,7 +136,7 @@ function PipelineStrip({
   return (
     <div className="mb-4">
       <div className="flex gap-3" style={{ marginBottom: "12px" }}>
-        {snapshotKPIs.map((stage) => {
+        {kpis.map((stage) => {
           const Icon = stage.icon;
           const isActive = activeStage === stage.key;
           return (
@@ -474,6 +523,9 @@ export function SubmissionsPanel() {
     return apiCards;
   }, [apiCards]);
 
+  // Pipeline strip KPIs derived from live API cards
+  const snapshotKPIs = useMemo(() => buildSnapshotKPIs(mergedCards), [mergedCards]);
+
   const accounts = useMemo(() => [...new Set(mergedCards.map(s => s.account))].sort(), [mergedCards]);
   const brokers  = useMemo(() => [...new Set(mergedCards.map(s => s.broker))].sort(),  [mergedCards]);
   const statuses = useMemo(() => [...new Set(mergedCards.map(s => s.processingStatus))], [mergedCards]);
@@ -519,7 +571,7 @@ export function SubmissionsPanel() {
   // Reset grid page whenever filters change
   useEffect(() => { setGridPage(1); }, [activeTab, searchQ, accountFilter, brokerFilter, statusFilter, uwFilter, stageFilter]);
 
-  const mineCount = SUBMISSION_CARDS.filter(s => s.assignedUW === "Mike Farrell").length;
+  const mineCount = mergedCards.filter(s => s.assignedUW === "Mike Farrell").length;
 
   const tabs = [
     { key: "all" as const, label: "All" },
@@ -563,6 +615,7 @@ export function SubmissionsPanel() {
         </div>
         {/* Pipeline cards */}
         <PipelineStrip
+          kpis={snapshotKPIs}
           activeStage={stageFilter?.stageKey ?? null}
           activeSubItem={stageFilter?.subItem ?? null}
           onStageClick={key => {
@@ -627,7 +680,7 @@ export function SubmissionsPanel() {
                 ? { backgroundColor: "#00205B", color: "white" }
                 : { backgroundColor: "white", color: "#4A6080" }}
             >
-              All UWs ({SUBMISSION_CARDS.length})
+              All UWs ({mergedCards.length})
             </button>
             <button
               onClick={() => setUwFilter("mine")}

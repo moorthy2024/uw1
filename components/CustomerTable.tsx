@@ -885,6 +885,9 @@ function fmtFullDate(iso: string) {
 }
 
 function DateCell({ date }: { date: string }) {
+  if (!date || date === "-" || date === "[Static Data]") {
+    return <div className="text-[12px]" style={{ color: "#94A3B8" }}>-</div>;
+  }
   return (
     <div className="text-[12px] text-[#1E3A5F]" style={{ fontWeight: 500 }}>
       {fmtFullDate(date)}

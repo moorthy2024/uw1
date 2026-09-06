@@ -181,13 +181,21 @@ function formatTiv(total_tiv: number | null): { tiv: string; tivFull: string } {
 }
 
 // ── Format date ────────────────────────────────────────────────────────────
+// Raw ISO date (YYYY-MM-DD) for table cells — cell component does display formatting
 function formatDate(iso: string | null): string {
+  if (!iso) return "-";
+  return iso.split("T")[0]; // "2026-09-06"
+}
+
+// Human-readable date for Account Overview / detail panel fields
+function formatDateDisplay(iso: string | null): string {
   if (!iso) return "-";
   try {
     const d = new Date(iso);
-    return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    if (isNaN(d.getTime())) return "-";
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   } catch {
-    return iso;
+    return "-";
   }
 }
 
@@ -223,8 +231,8 @@ export function transformSubmissionToRecord(api: ApiSubmission): SubmissionRecor
     tivFull,
     territory:      STATIC,                           // not in API
     locations:      api.loc_count != null ? `${api.loc_count} location${api.loc_count !== 1 ? "s" : ""}` : "-",
-    inceptionDate:  formatDate(api.policy_start),
-    submissionDate: formatDate(api.received_at),
+    inceptionDate:  formatDateDisplay(api.policy_start),
+    submissionDate: formatDateDisplay(api.received_at),
     naics:          STATIC,                           // not in API
     industry:       STATIC,                           // not in API
     summary:        STATIC,                           // not in API
