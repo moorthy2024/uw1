@@ -256,7 +256,7 @@ function SubmissionGridCard({ sub, onClick, assignedUW: assignedUWProp, onReassi
   assignedUW?: string; onReassign?: (id: string, uw: string) => void;
 }) {
   const statusCfg = PROCESSING_STATUS_CONFIG[sub.processingStatus];
-  const typeCfg   = TYPE_CFG[sub.submissionType] ?? TYPE_CFG["New Business"];
+  const typeCfg   = (sub.submissionType ? TYPE_CFG[sub.submissionType] : null) ?? TYPE_CFG["New Business"];
   const hz        = hazardInfo(sub.hazardGrade);
 const assignedUW = assignedUWProp ?? sub.assignedUW;
   const initials  = uwInitials(assignedUW);
@@ -311,8 +311,10 @@ const assignedUW = assignedUWProp ?? sub.assignedUW;
         {/* Type + status row */}
         <div className="flex items-center justify-between gap-2 mb-2">
           <span className="text-[9px] font-bold px-2 py-0.5 rounded-full border"
-            style={{ color: typeCfg.text, backgroundColor: typeCfg.bg, borderColor: typeCfg.border }}>
-            {sub.submissionType}
+            style={sub.submissionType
+              ? { color: typeCfg.text, backgroundColor: typeCfg.bg, borderColor: typeCfg.border }
+              : { color: "#94A3B8", backgroundColor: "#F8FAFC", borderColor: "#E2E8F0" }}>
+            {sub.submissionType ?? "-"}
           </span>
           <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${statusCfg.bg} ${statusCfg.color} ${statusCfg.border}`}>
             {statusCfg.label}

@@ -63,7 +63,7 @@ interface Submission {
   brokerBoundRate: number;
   brokerTrend: BrokerTrendDir;
   brokerTrendPct: number;
-  submissionType: "New Business" | "Renewal" | "Remarket";
+  submissionType: "New Business" | "Renewal" | "Remarket" | null;
   processingStatus: ProcessingStatus;
   receivedDate: string;
   needByDate: string;
@@ -701,7 +701,7 @@ export interface SubmissionCard {
   broker: string;
   brokerContact: string;
   brokerBoundRate: number;
-  submissionType: "New Business" | "Renewal" | "Remarket";
+  submissionType: "New Business" | "Renewal" | "Remarket" | null;
   processingStatus: ProcessingStatus;
   receivedDate: string;
   needByDate: string;
@@ -1102,6 +1102,7 @@ function CommChannelCell({ channel, receivedAt }: { channel: CommunicationChanne
 
 // ── Submission type badge ──
 function SubTypeBadge({ type }: { type: Submission["submissionType"] }) {
+  if (!type) return <span className="text-[9px] px-1.5 py-0.5 rounded border bg-[#F8FAFC] text-[#94A3B8] border-[#E2E8F0]" style={{ fontWeight: 600 }}>-</span>;
   const nb = type === "New Business" || type === "Remarket";
   return (
     <span className={`text-[9px] px-1.5 py-0.5 rounded border ${nb ? "bg-[#EEF6FF] text-[#0076BC] border-[#C2DFF4]" : "bg-[#E6EBF5] text-[#00205B] border-[#B0BDD9]"}`}
@@ -1201,7 +1202,7 @@ export function CustomerTable({
   const [view, setView] = useState<"all" | "mine">("all");
   const [assignments, setAssignments] = useState<Record<string, string>>({});
   const [page, setPage] = useState(1);
-  const perPage = 10;
+  const perPage = 25;
 
   const searchVal  = hideControls ? (externalSearch  ?? "") : search;
   const brokerVal  = hideControls ? (externalBroker  ?? "all") : brokerFilter;
@@ -1354,7 +1355,7 @@ export function CustomerTable({
       {/* Table */}
       {sorted.length > 0 && (
       <div className="bg-white rounded-xl border border-[#E0E8FF] overflow-hidden" style={{ boxShadow: "0 2px 8px rgba(0,32,91,0.05), 0 1px 2px rgba(0,32,91,0.04)" }}>
-        <div className="overflow-x-auto">
+        <div className="overflow-auto" style={{ maxHeight: "calc(100vh - 280px)" }}>
           <table className="w-full text-left" style={{ minWidth: "1820px" }}>
             <thead className="bg-[#F8FBFF] border-b border-[#E0E8FF]">
               <tr>

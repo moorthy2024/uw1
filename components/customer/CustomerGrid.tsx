@@ -12,7 +12,7 @@ interface SubmissionGridItem {
   id: string;
   account: string;
   homeOffice: string;
-  submissionType: string;
+  submissionType: string | null;
   processingStatus: ProcessingStatus;
   brokerBoundRate: number;
   needByDate: string;
@@ -74,7 +74,7 @@ function CompactSubmissionCard({ sub, isSelected, onClick }: {
 
         <div className="flex-1 min-w-0">
           <div className="text-[12px] text-[#0D1B2E] truncate leading-snug mb-0.5" style={{ fontWeight: 600 }}>{sub.account}</div>
-          <div className="text-[10px] text-[#94A3B8] mb-1.5">{sub.id} · {sub.submissionType}</div>
+          <div className="text-[10px] text-[#94A3B8] mb-1.5">{sub.id}{sub.submissionType ? ` · ${sub.submissionType}` : ""}</div>
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full border text-[9px] ${cfg.bg} ${cfg.color} ${cfg.border}`} style={{ fontWeight: 600 }}>
               {cfg.label}

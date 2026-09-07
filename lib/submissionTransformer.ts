@@ -172,7 +172,8 @@ function mapOfac(ofacStatus: string | null): "complete" | "in-progress" {
 }
 
 // ── Salesforce type → submission type ─────────────────────────────────────
-function mapSalesforceType(type: string | null): "New Business" | "Renewal" | "Remarket" {
+function mapSalesforceType(type: string | null): "New Business" | "Renewal" | "Remarket" | null {
+  if (!type) return null;
   const map: Record<string, "New Business" | "Renewal" | "Remarket"> = {
     "new_business":  "New Business",
     "new business":  "New Business",
@@ -180,7 +181,7 @@ function mapSalesforceType(type: string | null): "New Business" | "Renewal" | "R
     "renewal":       "Renewal",
     "remarket":      "Remarket",
   };
-  return map[type?.toLowerCase() ?? ""] ?? "New Business";
+  return map[type.toLowerCase()] ?? null;
 }
 
 // ── ingestion.status → row disable + label ────────────────────────────────
@@ -277,7 +278,7 @@ export function transformSubmissionToRecord(api: ApiSubmission): SubmissionRecor
     namedInsured:   api.insured_name ?? "-",
     broker:         api.broker_name ?? "-",
     brokerageHouse: STATIC,                           // not in API
-    type:           mapSalesforceType(enrichment?.salesforce_type ?? null),
+    type:           mapSalesforceType(enrichment?.salesforce_type ?? null) ?? "New Business",
     coverageType:   api.lob_name ?? api.lob_code ?? "-",
     tiv,
     tivFull,
