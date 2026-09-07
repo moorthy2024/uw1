@@ -187,15 +187,26 @@ function supplementRecordFromExtraction(
 
 // ── Per-step API hooks ───────────────────────────────────────────────────────
 
+export interface DefaultPreview {
+  docUrl: string;
+  docType: string;
+  docName: string;
+}
+
 export function useIngestionFields(submissionId: string | undefined): {
   fields: CatalogField[] | null;
   isLoading: boolean;
   error: string | null;
+  defaultPreview: DefaultPreview | null;
 } {
   const { data: submissionRecord } = useSubmission(submissionId);
-  const [fields, setFields]       = useState<CatalogField[] | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError]         = useState<string | null>(null);
+  const [fields, setFields]           = useState<CatalogField[] | null>(null);
+  // Start as true for real API submissions so the spinner shows on first render
+  const [isLoading, setIsLoading]     = useState<boolean>(() =>
+    !!submissionId && !(submissionId in submissionData)
+  );
+  const [error, setError]             = useState<string | null>(null);
+  const [defaultPreview, setDefaultPreview] = useState<DefaultPreview | null>(null);
 
   useEffect(() => {
     if (!submissionId || !submissionRecord) { setFields(null); return; }
@@ -231,6 +242,15 @@ export function useIngestionFields(submissionId: string | undefined): {
         const withValues = Object.values(valueMap).filter(v => v.value !== "");
         console.log(`[useIngestionFields] Value map: ${Object.keys(valueMap).length} fields, ${withValues.length} with extracted values`);
         console.log("[useIngestionFields] Extracted values:", withValues.map(v => `${Object.entries(valueMap).find(([,val]) => val === v)?.[0]}: "${v.value}"`));
+
+        // Extract default preview from the first document in the extraction response
+        const firstDoc = extractionData[0]?.Extracted_fields?.[0]?.document;
+        if (firstDoc?.url) {
+          const docName = firstDoc.tags?.[0] ?? firstDoc.name ?? "Email";
+          const docType = firstDoc.doc_type ?? "html";
+          console.log("[useIngestionFields] Default preview doc:", docName, docType, firstDoc.url.slice(0, 60));
+          setDefaultPreview({ docUrl: firstDoc.url, docType, docName });
+        }
 
         // Build catalog schema (provides domain/subEntity/label/kind/detail metadata)
         const catalogSchema = buildFieldCatalog(submissionRecord.meta, idx, DEFAULT_EXTRAS);
@@ -269,5 +289,5 @@ export function useIngestionFields(submissionId: string | undefined): {
       });
   }, [submissionId, submissionRecord]);
 
-  return { fields, isLoading, error };
+  return { fields, isLoading, error, defaultPreview };
 }

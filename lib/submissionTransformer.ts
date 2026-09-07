@@ -6,7 +6,7 @@
  * them as "[Static Data]" in grey brackets.
  */
 
-import type { SubmissionMeta, SubmissionExtras } from "@/components/SubmissionTypes";
+import type { SubmissionMeta, SubmissionExtras, DocItem } from "@/components/SubmissionTypes";
 import type { SubmissionIndexEntry, SubmissionCard, ProcessingStatus, WorkflowStatus, DataStatus, IndustryClass } from "@/components/CustomerTable";
 import type { SubmissionRecord } from "@/components/submission-analysis/useSubmission";
 import { DEFAULT_EXTRAS } from "@/components/submission-analysis/mock-data";
@@ -27,6 +27,7 @@ export interface ApiSubmission {
   lob_name: string | null;
   status: string;
   received_at: string | null;
+  last_received_at: string | null;
   last_updated_at: string | null;
   assigned_uw_id: string | null;
   assigned_uw_name: string | null;
@@ -35,15 +36,36 @@ export interface ApiSubmission {
   loc_count: number | null;
   limit_structure: string | null;
   version: number | null;
+  email_id: string | null;
   last_email_id: string | null;
   email_count: number | null;
+  subject: string | null;
+  from_address: string | null;
+  workflow_stage: string | null;
+  ingestion: {
+    status: string | null;
+    started_at: string | null;
+    completed_at: string | null;
+  } | null;
+  triage: {
+    status: string | null;
+    assigned_uw_id: string | null;
+    assigned_uw_name: string | null;
+    clearance_status: string | null;
+    ofac_status: string | null;
+  } | null;
   documents_received: {
     application: boolean;
+    sov: boolean;
+    loss_run: boolean;
+    engineering_report: boolean;
     coverage_request: boolean;
-    primary_policy: boolean;
-    loss_history: boolean;
-    risk_engineering_report: boolean;
-    statement_of_values: boolean;
+    prior_policy: boolean;
+    // legacy field names — kept for backwards compat during API transition
+    primary_policy?: boolean;
+    loss_history?: boolean;
+    risk_engineering_report?: boolean;
+    statement_of_values?: boolean;
   } | null;
   enrichment: {
     appetite: string | null;
@@ -161,14 +183,44 @@ function mapSalesforceType(type: string | null): "New Business" | "Renewal" | "R
   return map[type?.toLowerCase() ?? ""] ?? "New Business";
 }
 
+// ── ingestion.status → row disable + label ────────────────────────────────
+export function mapIngestionStatus(status: string | null): { label: string; disabled: boolean } {
+  switch (status) {
+    case "correlated":       return { label: "Processing email…",  disabled: true };
+    case "docs_tagged":      return { label: "Tagging documents…", disabled: true };
+    case "indexed":          return { label: "Extracting fields…", disabled: true };
+    case "complete":         return { label: "Ready for Review",   disabled: false };
+    default:                 return { label: "Processing…",        disabled: false };
+  }
+}
+
 // ── documents_received → DataStatus ───────────────────────────────────────
 function deriveDataStatus(docs: ApiSubmission["documents_received"]): DataStatus {
   if (!docs) return "Received";
-  const vals = Object.values(docs);
-  const receivedCount = vals.filter(Boolean).length;
+  const coreVals = [docs.application, docs.sov ?? docs.statement_of_values, docs.loss_run ?? docs.loss_history, docs.engineering_report ?? docs.risk_engineering_report, docs.coverage_request, docs.prior_policy ?? docs.primary_policy];
+  const receivedCount = coreVals.filter(Boolean).length;
   if (receivedCount === 0) return "Received";
-  if (receivedCount === vals.length) return "Ready";
+  if (receivedCount === coreVals.length) return "Ready";
   return "Processing";
+}
+
+// ── documents_received → DocItem[] ────────────────────────────────────────
+function deriveDocItems(docs: ApiSubmission["documents_received"]): DocItem[] {
+  type DocEntry = { key: string; name: string; legacyKey?: string };
+  const DOC_MAP: DocEntry[] = [
+    { key: "application",        name: "Application" },
+    { key: "sov",                name: "Statement of Values",     legacyKey: "statement_of_values" },
+    { key: "loss_run",           name: "Loss History",            legacyKey: "loss_history" },
+    { key: "engineering_report", name: "Risk Engineering Report", legacyKey: "risk_engineering_report" },
+    { key: "coverage_request",   name: "Coverage Request" },
+    { key: "prior_policy",       name: "Primary Policy",          legacyKey: "primary_policy" },
+  ];
+
+  return DOC_MAP.map(({ key, name, legacyKey }) => {
+    const d = docs as Record<string, boolean> | null;
+    const received = d ? (d[key] ?? (legacyKey ? d[legacyKey] : false)) === true : false;
+    return { name, received, needsReview: false };
+  });
 }
 
 // ── Format TIV ────────────────────────────────────────────────────────────
@@ -268,6 +320,7 @@ export function transformSubmissionToRecord(api: ApiSubmission): SubmissionRecor
   // Extraction API will supplement policyDetails fields where available.
   const extras: SubmissionExtras = {
     ...DEFAULT_EXTRAS,
+    documents: deriveDocItems(api.documents_received),
     policyDetails: {
       policyNumber:       "-",
       expirationDate:     "-",
@@ -379,9 +432,12 @@ export function transformSubmissionToCard(api: ApiSubmission): SubmissionCard {
   const workflow = workflowFromStatus(processingStatus);
   const { tivFull } = formatTiv(api.total_tiv);
   const enrichment = api.enrichment;
+  const ingestion = mapIngestionStatus(api.ingestion?.status ?? null);
 
   console.log("[transformer] transformSubmissionToCard", api.insured_name ?? api.id, {
     status: processingStatus,
+    ingestionStatus: api.ingestion?.status,
+    ingestionDisabled: ingestion.disabled,
     tiv: tivFull,
     broker: api.broker_name,
     assignedUW: api.assigned_uw_name,
@@ -417,6 +473,8 @@ export function transformSubmissionToCard(api: ApiSubmission): SubmissionCard {
     occupancyAppetite:      [],
     constructionAppetite:   [],
     paidClaims5yr:          "-",
+    ingestionStatus:        ingestion.label,
+    ingestionDisabled:      ingestion.disabled,
     ...workflow,
   };
 }

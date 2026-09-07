@@ -262,7 +262,7 @@ const assignedUW = assignedUWProp ?? sub.assignedUW;
   const initials  = uwInitials(assignedUW);
   const avatarBg  = UW_COLORS[assignedUW] ?? "linear-gradient(135deg,#64748B,#334155)";
   const canReassign = assignedUW === "Mike Farrell" && !!onReassign;
-  const isClickable = true; // all API submissions are interactive
+  const isClickable = !sub.ingestionDisabled;
   const [uwOpen, setUwOpen] = useState(false);
   const uwRef = useRef<HTMLDivElement>(null);
 
@@ -276,10 +276,9 @@ const assignedUW = assignedUWProp ?? sub.assignedUW;
   }, [uwOpen]);
 
   if (!isClickable) {
-    const ds = DATA_STATUS_CFG[sub.dataStatus];
     return (
       <div
-        className="bg-[#F8FAFB] rounded-2xl border border-[#E8EEFF] flex items-center justify-between gap-3 px-4 py-3 cursor-not-allowed"
+        className="bg-[#F8FAFB] rounded-2xl border border-[#E8EEFF] flex items-center justify-between gap-3 px-4 py-3 cursor-not-allowed opacity-60"
         style={{ boxShadow: "0 1px 4px rgba(0,32,91,0.03)" }}
       >
         <div className="flex flex-col gap-0.5 min-w-0">
@@ -289,7 +288,12 @@ const assignedUW = assignedUWProp ?? sub.assignedUW;
             <span className="truncate">{sub.homeOffice}</span>
           </div>
         </div>
-        <span className={`text-[8px] font-bold px-2 py-1 rounded flex-shrink-0 border ${ds.bg} ${ds.color} ${ds.border}`}>{ds.label}</span>
+        {sub.ingestionStatus && (
+          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-[9px] font-bold flex-shrink-0 border bg-[#F8FAFC] text-[#94A3B8] border-[#E2E8F0]">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#94A3B8] animate-pulse inline-block flex-shrink-0" />
+            {sub.ingestionStatus}
+          </span>
+        )}
       </div>
     );
   }
@@ -536,7 +540,7 @@ export function SubmissionsPanel() {
   };
 
   // Real submissions from API only
-  const { cards: apiCards } = useSubmissions();
+  const { cards: apiCards, isLoading: submissionsLoading } = useSubmissions();
   const mergedCards = useMemo<SubmissionCard[]>(() => {
     console.log("[SubmissionsPanel] API cards:", apiCards.length);
     return apiCards;
@@ -551,8 +555,8 @@ export function SubmissionsPanel() {
 
   const filtered = useMemo(() => {
     let list = [...mergedCards];
-    if (activeTab === "new-business") list = list.filter(s => s.dataStatus === "Ready" && s.submissionType === "New Business");
-    if (activeTab === "renewals")     list = list.filter(s => s.dataStatus === "Ready" && s.submissionType === "Renewal");
+    if (activeTab === "new-business") list = list.filter(s => s.submissionType === "New Business");
+    if (activeTab === "renewals")     list = list.filter(s => s.submissionType === "Renewal");
     if (searchQ) {
       const q = searchQ.toLowerCase();
       list = list.filter(s =>
@@ -585,7 +589,7 @@ export function SubmissionsPanel() {
       if (!aReady && !bReady) return 0;
       return new Date(a.needByDate).getTime() - new Date(b.needByDate).getTime();
     });
-  }, [activeTab, searchQ, accountFilter, brokerFilter, statusFilter, stageFilter, uwFilter]);
+  }, [mergedCards, activeTab, searchQ, accountFilter, brokerFilter, statusFilter, stageFilter, uwFilter]);
 
   // Reset grid page whenever filters change
   useEffect(() => { setGridPage(1); }, [activeTab, searchQ, accountFilter, brokerFilter, statusFilter, uwFilter, stageFilter]);
@@ -761,7 +765,12 @@ export function SubmissionsPanel() {
       <div className="flex-1">
         {viewMode === "grid" ? (
           <div className="p-6">
-            {filtered.length === 0 ? (
+            {submissionsLoading ? (
+              <div className="py-20 flex flex-col items-center justify-center gap-3">
+                <div className="w-8 h-8 border-2 border-[#0076BC] border-t-transparent rounded-full animate-spin" />
+                <div className="text-[13px]" style={{ color: "#94A3B8" }}>Loading submissions…</div>
+              </div>
+            ) : filtered.length === 0 ? (
               <div className="py-20 text-center">
                 <AlertTriangle className="w-6 h-6 mx-auto mb-3" style={{ color: "#C0CEDC" }} />
                 <div className="text-[14px] font-semibold mb-1" style={{ color: "#4A6080" }}>No submissions match your filters</div>
@@ -819,6 +828,11 @@ export function SubmissionsPanel() {
                 </>
               );
             })()}
+          </div>
+        ) : submissionsLoading ? (
+          <div className="py-20 flex flex-col items-center justify-center gap-3">
+            <div className="w-8 h-8 border-2 border-[#0076BC] border-t-transparent rounded-full animate-spin" />
+            <div className="text-[13px]" style={{ color: "#94A3B8" }}>Loading submissions…</div>
           </div>
         ) : (
           <CustomerTable

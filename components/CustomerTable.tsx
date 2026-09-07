@@ -100,6 +100,8 @@ interface Submission {
   book: WorkflowStatus;
   bind: WorkflowStatus;
   issue: WorkflowStatus;
+  ingestionStatus?: string;
+  ingestionDisabled?: boolean;
 }
 
 const CURRENT_USER = "Mike Farrell";
@@ -731,6 +733,8 @@ export interface SubmissionCard {
   formManuscript: WorkflowStatus;
   bind: WorkflowStatus;
   issue: WorkflowStatus;
+  ingestionStatus?: string;
+  ingestionDisabled?: boolean;
 }
 
 export const SUBMISSION_CARDS: SubmissionCard[] = submissions.map(s => ({
@@ -1178,6 +1182,8 @@ function cardToSubmission(card: SubmissionCard): Submission {
     communicationReceivedAt: card.receivedDate,
     book:                    "not-started",
     processingPattern:       "Low Touch",
+    ingestionStatus:         card.ingestionStatus,
+    ingestionDisabled:       card.ingestionDisabled,
   };
 }
 
@@ -1206,15 +1212,13 @@ export function CustomerTable({
   const handleReassign = (id: string, uw: string) => setAssignments(p => ({ ...p, [id]: uw }));
   const getUW = (s: Submission) => assignments[s.id] ?? s.assignedUW;
 
-  const isReady = (s: Submission) => s.dataStatus === "Ready";
-
   // API submissions only
   const allSubmissions = (apiSubmissions ?? []).map(cardToSubmission);
   console.log("[CustomerTable] Rendering", allSubmissions.length, "API submissions");
 
   let rows = allSubmissions.filter(s => {
-    if (filterType === "new-business") return isReady(s) && (s.submissionType === "New Business" || s.submissionType === "Remarket");
-    if (filterType === "renewals") return isReady(s) && s.submissionType === "Renewal";
+    if (filterType === "new-business") return s.submissionType === "New Business" || s.submissionType === "Remarket";
+    if (filterType === "renewals") return s.submissionType === "Renewal";
     return true;
   });
 
@@ -1401,12 +1405,12 @@ export function CustomerTable({
             <tbody className="divide-y divide-[#EEF2FF]">
               {paged.map(sub => {
                 const uw = getUW(sub);
-                const isClickable = true;
+                const isClickable = !sub.ingestionDisabled;
 
                 if (!isClickable) {
                   return (
-                    <tr key={sub.id} className="bg-[#F8FAFB] cursor-not-allowed">
-                      {/* Account — name, location, type; no submission ID */}
+                    <tr key={sub.id} className="bg-[#F8FAFB] cursor-not-allowed opacity-60">
+                      {/* Account — name, location; no submission ID */}
                       <td className="px-4 py-3 align-middle">
                         <div className="flex flex-col gap-0.5 items-start">
                           <div className="text-[12px] text-[#9BA8B8] leading-snug" style={{ fontWeight: 600 }}>{sub.account}</div>
@@ -1416,14 +1420,21 @@ export function CustomerTable({
                           </div>
                         </div>
                       </td>
-                      {/* Workflow Status — blank */}
-                      <td />
+                      {/* Workflow Status — show ingestion progress label */}
+                      <td className="px-4 py-3 align-middle">
+                        {sub.ingestionStatus && (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] border bg-[#F8FAFC] text-[#94A3B8] border-[#E2E8F0]" style={{ fontWeight: 600 }}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#94A3B8] animate-pulse inline-block" />
+                            {sub.ingestionStatus}
+                          </span>
+                        )}
+                      </td>
                       {/* Data Status */}
                       <td className="px-4 py-3 align-middle">
                         <DataStatusBadge status={sub.dataStatus} />
                       </td>
                       {/* All remaining columns — blank */}
-                      <td /><td /><td /><td /><td /><td /><td /><td /><td /><td /><td />
+                      <td /><td /><td /><td /><td /><td /><td /><td /><td /><td />
                     </tr>
                   );
                 }

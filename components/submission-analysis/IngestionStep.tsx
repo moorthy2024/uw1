@@ -606,18 +606,21 @@ function DocHtmlViewer({ page, docType, highlightLabel, searchText, sheet, pageN
 
 /* Fetches and renders an HTML email from blob storage with citation highlight */
 function HtmlEmailViewer({ docUrl, excerpt, highlightLabel }: {
-  docUrl: string;
-  excerpt: string;
-  highlightLabel: string;
+  docUrl?: string;
+  excerpt?: string;
+  highlightLabel?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading]     = useState(true);
   const [fetchError, setFetchError] = useState(false);
+  const [emailHtml, setEmailHtml] = useState<string | null>(null);
 
+  // Step 1 — fetch the HTML and store it in state
   useEffect(() => {
     if (!docUrl) return;
     setLoading(true);
     setFetchError(false);
+    setEmailHtml(null);
 
     console.group("[HtmlEmailViewer] Fetching email HTML");
     console.log("Proxy URL:", `/api/doc-proxy?url=${docUrl.slice(0, 80)}…`);
@@ -630,42 +633,10 @@ function HtmlEmailViewer({ docUrl, excerpt, highlightLabel }: {
         return r.text();
       })
       .then(html => {
-        if (!containerRef.current) return;
         console.log("[HtmlEmailViewer] HTML loaded, length:", html.length, "chars");
-
-        containerRef.current.innerHTML = html;
-
-        // Highlight the citation chunk by finding text nodes
-        const terms = [excerpt, highlightLabel].filter(Boolean);
-        let highlighted = false;
-        for (const term of terms) {
-          if (highlighted) break;
-          const walk = (node: Node): boolean => {
-            if (node.nodeType === Node.TEXT_NODE) {
-              const text = node.textContent ?? "";
-              const idx = text.toLowerCase().indexOf(term.toLowerCase());
-              if (idx === -1) return false;
-              const mark = document.createElement("mark");
-              mark.style.cssText = "background:rgba(251,191,36,0.45);border:1px solid rgb(217,119,6);border-radius:2px;padding:1px 3px";
-              mark.textContent = text.slice(idx, idx + term.length);
-              const after = document.createTextNode(text.slice(idx + term.length));
-              node.textContent = text.slice(0, idx);
-              node.parentNode?.insertBefore(mark, node.nextSibling);
-              node.parentNode?.insertBefore(after, mark.nextSibling);
-              mark.scrollIntoView({ behavior: "smooth", block: "center" });
-              console.log(`[HtmlEmailViewer] Citation highlighted — term: "${term.slice(0, 60)}"`);
-              return true;
-            }
-            for (const child of Array.from(node.childNodes)) {
-              if (walk(child)) return true;
-            }
-            return false;
-          };
-          highlighted = walk(containerRef.current);
-        }
-        if (!highlighted) console.warn("[HtmlEmailViewer] Citation text not found in email:", terms);
-        console.groupEnd();
+        setEmailHtml(html);
         setLoading(false);
+        console.groupEnd();
       })
       .catch(err => {
         console.error("[HtmlEmailViewer] Fetch error:", err.message);
@@ -673,8 +644,45 @@ function HtmlEmailViewer({ docUrl, excerpt, highlightLabel }: {
         setFetchError(true);
         setLoading(false);
       });
-  }, [docUrl, excerpt, highlightLabel]);
+  }, [docUrl]);
 
+  // Step 2 — once loading=false the container div is in the DOM; inject HTML and highlight
+  useEffect(() => {
+    if (!emailHtml || !containerRef.current) return;
+    containerRef.current.innerHTML = emailHtml;
+
+    const terms = [excerpt, highlightLabel].filter((t): t is string => Boolean(t));
+    let highlighted = false;
+    for (const term of terms) {
+      if (highlighted) break;
+      const walk = (node: Node): boolean => {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const text = node.textContent ?? "";
+          const idx = text.toLowerCase().indexOf(term.toLowerCase());
+          if (idx === -1) return false;
+          const mark = document.createElement("mark");
+          mark.style.cssText = "background:rgba(251,191,36,0.45);border:1px solid rgb(217,119,6);border-radius:2px;padding:1px 3px";
+          mark.textContent = text.slice(idx, idx + term.length);
+          const after = document.createTextNode(text.slice(idx + term.length));
+          node.textContent = text.slice(0, idx);
+          node.parentNode?.insertBefore(mark, node.nextSibling);
+          node.parentNode?.insertBefore(after, mark.nextSibling);
+          mark.scrollIntoView({ behavior: "smooth", block: "center" });
+          console.log(`[HtmlEmailViewer] Citation highlighted — term: "${term.slice(0, 60)}"`);
+          return true;
+        }
+        for (const child of Array.from(node.childNodes)) {
+          if (walk(child)) return true;
+        }
+        return false;
+      };
+      highlighted = walk(containerRef.current);
+    }
+    if (terms.length > 0 && !highlighted)
+      console.warn("[HtmlEmailViewer] Citation text not found in email:", terms);
+  }, [emailHtml, excerpt, highlightLabel]);
+
+  if (!docUrl) return <div className="flex-1 flex items-center justify-center text-[#9B9B98] text-[12px]">No document URL</div>;
   if (loading) return <div className="flex-1 flex items-center justify-center text-[#9B9B98] text-[12px]">Loading email…</div>;
   if (fetchError) return <div className="flex-1 flex items-center justify-center text-[#9B9B98] text-[12px]">Could not load email document</div>;
 
@@ -1891,7 +1899,7 @@ function DocDropdown({ options, value, onChange }: {
 
 export function IngestionStep({ onProceed }: { onProceed: () => void }) {
   const { meta, idx, extras } = useSubmissionCtx();
-  const { fields: rawFields } = useIngestionFields(meta.id);
+  const { fields: rawFields, isLoading: fieldsLoading, defaultPreview } = useIngestionFields(meta.id);
   const fields = rawFields ?? [];
 
   /* Four-level hierarchy: expected document → domain → entity/sub-entity → field */
@@ -1919,18 +1927,16 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
     const firstDoc = EXPECTED_DOCS.find(d => rawFields.some(f => f.doc === d)) ?? "";
     if (firstDoc) setActiveDoc(firstDoc);
     if (!selectedField) setSelectedField(rawFields[0] ?? null);
-
-    // Auto-set right-panel preview to the first field with a real document URL
-    // so the email (or other source doc) loads immediately on open
-    const firstWithRef = rawFields.find(f => f.docRef?.docUrl);
-    if (firstWithRef?.docRef) {
-      const ref = firstWithRef.docRef;
-      console.log("[IngestionStep] Auto-setting preview doc on load:", ref.doc, ref.docType, ref.docUrl);
-      setPreviewDoc(ref.doc);
-      if (ref.docType) setActiveDocType(ref.docType as DocType);
-      setPreviewDocUrl(ref.docUrl);
-    }
   }, [rawFields]);
+
+  // Option B — set right-panel preview from first extraction document (document-level, not field-level)
+  useEffect(() => {
+    if (!defaultPreview) return;
+    console.log("[IngestionStep] Setting default preview from extraction doc:", defaultPreview.docName, defaultPreview.docType);
+    setPreviewDoc(defaultPreview.docName);
+    setActiveDocType(defaultPreview.docType as DocType);
+    setPreviewDocUrl(defaultPreview.docUrl);
+  }, [defaultPreview]);
   const [edited, setEdited] = useState<Set<string>>(new Set());
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [previewDoc, setPreviewDoc] = useState<string>("Application");
@@ -2253,11 +2259,11 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
 
   /* Left pane — domain/subEntity/field hierarchy within */
   const left = (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col">
 
 
       {/* Active tab content — domain → subEntity → field rows */}
-      <div ref={fieldListRef} className="flex-1 overflow-auto flex flex-col min-h-0">
+      <div ref={fieldListRef} className="flex flex-col">
         {/* Streaming indicator */}
         {isStreaming && (
           <div className="flex-shrink-0 flex items-center gap-2 px-3 py-1.5 bg-blue-50 border-b border-blue-100">
@@ -2497,6 +2503,18 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
           ?? (IMAGE_DOCS.has(previewDoc) ? "image" : EXCEL_DOCS.has(previewDoc) ? "xlsx" : WORD_DOCS.has(previewDoc) ? "docx" : "pdf");
         const page = docPage;
         const notReceived = !page;
+
+        // Option D — show spinner while extraction fields are loading (before defaultPreview is known)
+        if (fieldsLoading) {
+          return (
+            <div className="flex-1 flex items-center justify-center bg-[#FAFAF9]">
+              <div className="text-center">
+                <div className="w-8 h-8 border-2 border-[#0076BC] border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                <div className="text-[11px] text-[#9B9B98]">Loading documents…</div>
+              </div>
+            </div>
+          );
+        }
 
         if (docLoading) {
           return (
