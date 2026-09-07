@@ -318,6 +318,8 @@ export function useDocumentPage(
         xlsx:  buildXlsxPage,
         docx:  buildDocxPage,
         csv:   buildCsvPage,
+        // HTML emails are rendered by HtmlEmailViewer directly — no PdfPage needed
+        html:  () => Promise.resolve({ pageCount: 1 } as unknown as PdfPage),
       };
       loaders[docType](docUrl)
         .then((page) => { _cache.set(key, page); setResult(page); setLoading(false); })

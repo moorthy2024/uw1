@@ -236,9 +236,15 @@ export function useIngestionFields(submissionId: string | undefined): {
         const catalogSchema = buildFieldCatalog(submissionRecord.meta, idx, DEFAULT_EXTRAS);
         console.log(`[useIngestionFields] Catalog schema: ${catalogSchema.length} fields`);
 
+        // Case-insensitive lookup — extraction API uses "Broker Firm Name",
+        // catalog uses "Broker firm name"
+        const valueMapLower = Object.fromEntries(
+          Object.entries(valueMap).map(([k, v]) => [k.toLowerCase(), v])
+        );
+
         // Overlay real extraction values — null → empty string
         const merged = catalogSchema.map(f => {
-          const real = valueMap[f.label];
+          const real = valueMap[f.label] ?? valueMapLower[f.label.toLowerCase()];
           if (!real) return { ...f, value: "" };
           return {
             ...f,

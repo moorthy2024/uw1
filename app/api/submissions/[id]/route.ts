@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { options } from "@/features/auth/auth-api";
 
-const BACKEND = process.env.BACKEND_API_URL ?? "";
+export const dynamic = "force-dynamic";
+
+const baseUrl = process.env.UW_API_BASE_URL ?? "";
 
 /**
  * GET /api/submissions/[id]
@@ -11,44 +15,61 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   const { id } = params;
-  const upstreamUrl = `${BACKEND}/api/v1/submissions/${id}`;
 
-  console.group(`[API /api/submissions/${id}] Single submission request`);
+  const session: any = await getServerSession(options);
+
+  if (!session?.accessToken) {
+    return NextResponse.json(
+      { error: "No access token found in session" },
+      { status: 401 }
+    );
+  }
+
+  const upstreamUrl = `${baseUrl}/api/v1/submissions/${id}`;
+
+  console.group(`[API /api/v1/submissions/${id}] Single submission request`);
   console.log("Upstream URL:", upstreamUrl);
+  console.log("Access Token Present:", !!session?.accessToken);
 
   try {
     const upstream = await fetch(upstreamUrl, {
+      method: "GET",
       headers: {
-        "Content-Type": "application/json",
-        // "Authorization": `Bearer ${process.env.BACKEND_TOKEN}`,
+        accept: "application/json",
+        Authorization: `Bearer ${session.accessToken}`,
       },
       cache: "no-store",
     });
 
+    const contentType = upstream.headers.get("content-type") ?? "";
+    const responseBody = contentType.includes("application/json")
+      ? await upstream.json().catch(() => null)
+      : await upstream.text().catch(() => null);
+
+    console.log("Upstream Status:", upstream.status);
+    console.log("Upstream Response:", JSON.stringify(responseBody, null, 2));
+
     if (!upstream.ok) {
-      console.error(`[API /api/submissions/${id}] Upstream error:`, upstream.status, upstream.statusText);
+      console.error(
+        `[API /api/v1/submissions/${id}] Upstream error:`,
+        upstream.status,
+        upstream.statusText
+      );
       console.groupEnd();
       return NextResponse.json(
-        { error: `Upstream ${upstream.status}: ${upstream.statusText}` },
+        { error: responseBody },
         { status: upstream.status }
       );
     }
 
-    const data = await upstream.json();
-    console.log(`[API /api/submissions/${id}] Response:`, {
-      insured_name:      data.insured_name,
-      status:            data.status,
-      total_tiv:         data.total_tiv,
-      loc_count:         data.loc_count,
-      assigned_uw_name:  data.assigned_uw_name,
-      enrichment:        data.enrichment,
-    });
     console.groupEnd();
-
-    return NextResponse.json(data);
+    return NextResponse.json(responseBody);
   } catch (err) {
-    console.error(`[API /api/submissions/${id}] Fetch error:`, err);
+    console.error(`[API /api/v1/submissions/${id}] Fetch error:`, err);
     console.groupEnd();
-    return NextResponse.json({ error: "Failed to reach backend" }, { status: 502 });
+    return NextResponse.json(
+      { error: "Failed to reach backend" },
+      { status: 502 }
+    );
   }
 }

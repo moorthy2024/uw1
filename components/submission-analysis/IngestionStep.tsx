@@ -1908,8 +1908,29 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
     () => Object.fromEntries(fields.map(f => [fieldKey(f), f.value]))
   );
   const [verified, setVerified] = useState<Set<string>>(new Set());
-  const [selectedField, setSelectedField] = useState<CatalogField | null>(fields[0]);
+  const [selectedField, setSelectedField] = useState<CatalogField | null>(fields[0] ?? null);
   const [activeDoc, setActiveDoc] = useState<string>(() => docsInOrder[0] ?? "");
+
+  // Sync values/selection when extraction fields load asynchronously (real API submissions)
+  useEffect(() => {
+    if (!rawFields || rawFields.length === 0) return;
+    console.log("[IngestionStep] Extraction fields loaded — syncing values:", rawFields.filter(f => f.value).length, "with values");
+    setValues(Object.fromEntries(rawFields.map(f => [fieldKey(f), f.value])));
+    const firstDoc = EXPECTED_DOCS.find(d => rawFields.some(f => f.doc === d)) ?? "";
+    if (firstDoc) setActiveDoc(firstDoc);
+    if (!selectedField) setSelectedField(rawFields[0] ?? null);
+
+    // Auto-set right-panel preview to the first field with a real document URL
+    // so the email (or other source doc) loads immediately on open
+    const firstWithRef = rawFields.find(f => f.docRef?.docUrl);
+    if (firstWithRef?.docRef) {
+      const ref = firstWithRef.docRef;
+      console.log("[IngestionStep] Auto-setting preview doc on load:", ref.doc, ref.docType, ref.docUrl);
+      setPreviewDoc(ref.doc);
+      if (ref.docType) setActiveDocType(ref.docType as DocType);
+      setPreviewDocUrl(ref.docUrl);
+    }
+  }, [rawFields]);
   const [edited, setEdited] = useState<Set<string>>(new Set());
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [previewDoc, setPreviewDoc] = useState<string>("Application");
@@ -2601,6 +2622,36 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
               </div>
             </div>
           );
+        } else if (resolvedType === "html") {
+          console.log("[IngestionStep] Rendering HTML email preview panel", { previewDocUrl, previewSearchText, previewHighlight });
+          if (!previewDocUrl) {
+            return (
+              <div className="flex-1 flex items-center justify-center bg-[#FAFAF9]">
+                <div className="text-center text-[11px] text-[#9B9B98]">
+                  <FileText className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                  No document URL available
+                </div>
+              </div>
+            );
+          }
+          return (
+            <div className="flex-1 flex flex-col overflow-hidden" style={{ background: "#F3F4F6" }}>
+              <div className="flex-shrink-0 px-3 py-1.5 flex items-center gap-2" style={{ background: "#374151" }}>
+                <div className="w-5 h-5 rounded flex items-center justify-center bg-white">
+                  <span className="text-[9px] font-bold" style={{ color: "#374151" }}>@</span>
+                </div>
+                <span className="text-white text-[11px] font-semibold">{previewDoc}</span>
+                <span className="ml-auto text-[10px] text-white opacity-60">.html</span>
+              </div>
+              <div className="flex-1 overflow-auto p-3">
+                <HtmlEmailViewer
+                  docUrl={previewDocUrl}
+                  excerpt={previewSearchText}
+                  highlightLabel={previewHighlight}
+                />
+              </div>
+            </div>
+          );
         } else {
           return (
             <div className="flex-1 bg-[#6B7280] p-3 overflow-auto">
@@ -2697,6 +2748,7 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
             resolvedType === "xlsx"  ? { label: "XLSX", bg: "#217346", fg: "white" } :
             resolvedType === "docx"  ? { label: "DOCX", bg: "#2B579A", fg: "white" } :
             resolvedType === "image" ? { label: "IMG",  bg: "#374151", fg: "white" } :
+            resolvedType === "html"  ? { label: "HTML", bg: "#374151", fg: "white" } :
                                        { label: "PDF",  bg: "#D93025", fg: "white" };
           return (
             <>

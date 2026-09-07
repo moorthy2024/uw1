@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { options } from "@/features/auth/auth-api";
 
+export const dynamic = "force-dynamic";
+
 const baseUrl = process.env.UW_API_BASE_URL ?? "";
 
 /**
