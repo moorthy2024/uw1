@@ -252,40 +252,36 @@ export function useIngestionFields(submissionId: string | undefined): {
           setDefaultPreview({ docUrl: firstDoc.url, docType, docName });
         }
 
-        // Build full schema from official field taxonomy — all fields, including empty ones
-        const catalogSchema: CatalogField[] = FIELD_CATALOG.map(entry => ({
-          doc:        entry.domain,
-          domain:     entry.subEntity,
-          subEntity:  "",
-          label:      entry.label,
-          kind:       "text" as const,
-          value:      "",
-          confidence: 0,
-          critical:   "As applicable" as const,
-          detail:     "",
-        }));
-        console.log(`[useIngestionFields] Catalog schema: ${catalogSchema.length} fields`);
+        // Catalog lookup for domain/subEntity grouping (case-insensitive)
+        const catalogLookup = new Map(FIELD_CATALOG.map(e => [e.label.toLowerCase(), e]));
+        const catalogOrder  = new Map(FIELD_CATALOG.map((e, i) => [e.label.toLowerCase(), i]));
 
-        // Case-insensitive lookup — extraction API uses "Broker Firm Name",
-        // catalog uses "Broker firm name"
-        const valueMapLower = Object.fromEntries(
-          Object.entries(valueMap).map(([k, v]) => [k.toLowerCase(), v])
-        );
-
-        // Overlay real extraction values — null → empty string
-        const merged = catalogSchema.map(f => {
-          const real = valueMap[f.label] ?? valueMapLower[f.label.toLowerCase()];
-          if (!real) return { ...f, value: "" };
-          return {
-            ...f,
-            value:      real.value,
-            confidence: real.confidence,
-            ...(real.docRef ? { docRef: { ...real.docRef, docType: real.docRef.docType as any } } : {}),
-          };
-        });
+        // Build one CatalogField per field in the API response — all 46, including empty ones.
+        // Fields not found in the catalog fall back to "Application / Other".
+        const merged: CatalogField[] = Object.entries(valueMap)
+          .map(([label, entry]) => {
+            const cat = catalogLookup.get(label.toLowerCase());
+            return {
+              doc:        cat?.domain    ?? "Application",
+              domain:     cat?.subEntity ?? "Other",
+              subEntity:  "",
+              label,
+              kind:       "text" as const,
+              value:      entry.value,
+              confidence: entry.confidence,
+              critical:   "As applicable" as const,
+              detail:     "",
+              ...(entry.docRef ? { docRef: { ...entry.docRef, docType: entry.docRef.docType as any } } : {}),
+            };
+          })
+          .sort((a, b) => {
+            const ai = catalogOrder.get(a.label.toLowerCase()) ?? 999;
+            const bi = catalogOrder.get(b.label.toLowerCase()) ?? 999;
+            return ai - bi;
+          });
 
         const filled = merged.filter(f => f.value !== "").length;
-        console.log(`[useIngestionFields] Merged: ${merged.length} fields, ${filled} filled from extraction`);
+        console.log(`[useIngestionFields] ${merged.length} fields from API, ${filled} with extracted values`);
         console.groupEnd();
 
         setFields(merged);
