@@ -1904,8 +1904,15 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
 
   /* Four-level hierarchy: expected document → domain → entity/sub-entity → field */
   const docsInOrder = EXPECTED_DOCS.filter(d => fields.some(f => f.doc === d));
-  const domainsFor = (doc: string) =>
-    DOMAIN_ORDER.filter(dom => fields.some(f => f.doc === doc && f.domain === dom));
+  const domainsFor = (doc: string) => {
+    const inOrder = DOMAIN_ORDER.filter(dom => fields.some(f => f.doc === doc && f.domain === dom));
+    if (inOrder.length > 0) return inOrder;
+    // Real API submissions use FIELD_CATALOG ordering — preserve insertion order
+    const seen = new Set<string>();
+    return fields.filter(f => f.doc === doc).map(f => f.domain).filter(d => {
+      if (seen.has(d)) return false; seen.add(d); return true;
+    });
+  };
   const subEntitiesFor = (doc: string, domain: string) =>
     [...new Set(fields.filter(f => f.doc === doc && f.domain === domain).map(f => f.subEntity))];
   const fieldsFor = (doc: string, domain: string, subEntity: string) =>
@@ -2225,12 +2232,15 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
     | { kind: "field";     field: CatalogField; domain: string; subEntity: string };
 
   const flatItems = useMemo<FlatItem[]>(() => {
-    if (activeDoc === "Statement of Values" || activeDoc === "Loss History") return [];
+    // Only trigger the special SOV/LossHistory views for mock submissions
+    const isMockFields = fields.some(f => f.doc === "Statement of Values" || f.doc === "Site Photos");
+    if (isMockFields && (activeDoc === "Statement of Values" || activeDoc === "Loss History")) return [];
     const items: FlatItem[] = [];
     for (const domain of domainsFor(activeDoc)) {
       items.push({ kind: "domain", domain });
       for (const subEntity of subEntitiesFor(activeDoc, domain)) {
-        items.push({ kind: "subentity", domain, subEntity });
+        // Skip empty subEntity headers (real API submissions have no 3rd-level grouping)
+        if (subEntity) items.push({ kind: "subentity", domain, subEntity });
         for (const f of fieldsFor(activeDoc, domain, subEntity)) {
           items.push({ kind: "field", field: f, domain, subEntity });
         }
@@ -2271,7 +2281,7 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
             <span className="text-[10px] text-blue-700" style={{ fontWeight: 600 }}>Extracting fields…</span>
           </div>
         )}
-        {activeDoc === "Statement of Values" ? (
+        {(fields.some(f => f.doc === "Statement of Values") && activeDoc === "Statement of Values") ? (
           <SovIngestionView
             sov={extras.sov}
             lossHistory={extras.lossHistory}
@@ -2281,7 +2291,7 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
             setVerified={setVerified}
             fieldKey={fieldKey}
           />
-        ) : activeDoc === "Loss History" ? (
+        ) : (fields.some(f => f.doc === "Statement of Values") && activeDoc === "Loss History") ? (
           <LossHistoryIngestionView
             lossHistory={extras.lossHistory}
             fields={fields}

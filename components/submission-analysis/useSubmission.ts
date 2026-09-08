@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import type { SubmissionMeta, SubmissionExtras } from "./types";
 import type { CatalogField } from "./types";
 import type { SubmissionIndexEntry } from "../CustomerTable";
-import { submissionData, DEFAULT_EXTRAS, submissionExtras, buildFieldCatalog } from "./mock-data";
+import { submissionData, DEFAULT_EXTRAS, submissionExtras, buildFieldCatalog, FIELD_CATALOG } from "./mock-data";
 import { SUBMISSION_INDEX } from "../CustomerTable";
 import {
   transformSubmissionToRecord,
@@ -252,8 +252,18 @@ export function useIngestionFields(submissionId: string | undefined): {
           setDefaultPreview({ docUrl: firstDoc.url, docType, docName });
         }
 
-        // Build catalog schema (provides domain/subEntity/label/kind/detail metadata)
-        const catalogSchema = buildFieldCatalog(submissionRecord.meta, idx, DEFAULT_EXTRAS);
+        // Build full schema from official field taxonomy — all fields, including empty ones
+        const catalogSchema: CatalogField[] = FIELD_CATALOG.map(entry => ({
+          doc:        entry.domain,
+          domain:     entry.subEntity,
+          subEntity:  "",
+          label:      entry.label,
+          kind:       "text" as const,
+          value:      "",
+          confidence: 0,
+          critical:   "As applicable" as const,
+          detail:     "",
+        }));
         console.log(`[useIngestionFields] Catalog schema: ${catalogSchema.length} fields`);
 
         // Case-insensitive lookup — extraction API uses "Broker Firm Name",

@@ -942,6 +942,84 @@ export const DOMAIN_ORDER = [
   "Financial / Account Reference",
 ] as const;
 
+/* Official field taxonomy — all extraction fields grouped by domain and sub-entity.
+   Used by real API submissions to show all fields (including empty) in the correct grouping. */
+export interface FieldCatalogEntry { domain: string; subEntity: string; label: string }
+export const FIELD_CATALOG: FieldCatalogEntry[] = [
+  // Application — Insured
+  { domain: "Application", subEntity: "Insured", label: "Named Insured (legal name)" },
+  { domain: "Application", subEntity: "Insured", label: "Legal Entity Type" },
+  { domain: "Application", subEntity: "Insured", label: "Principal Contact Name" },
+  { domain: "Application", subEntity: "Insured", label: "NAICS Code" },
+  { domain: "Application", subEntity: "Insured", label: "Appetite ID" },
+  { domain: "Application", subEntity: "Insured", label: "ATC Occupancy Code" },
+  { domain: "Application", subEntity: "Insured", label: "Occupancy Description" },
+  { domain: "Application", subEntity: "Insured", label: "Description of Operations & Material Flow" },
+  { domain: "Application", subEntity: "Insured", label: "Occupancy Group" },
+  // Application — Broker / Producer
+  { domain: "Application", subEntity: "Broker / Producer", label: "Broker Firm Name" },
+  { domain: "Application", subEntity: "Broker / Producer", label: "Broker Producer Code" },
+  { domain: "Application", subEntity: "Broker / Producer", label: "Broker Email Address" },
+  { domain: "Application", subEntity: "Broker / Producer", label: "Retail Broker Name" },
+  { domain: "Application", subEntity: "Broker / Producer", label: "Proposed Commission (%)" },
+  // Application — Location
+  { domain: "Application", subEntity: "Location", label: "Insured Mailing Address" },
+  { domain: "Application", subEntity: "Location", label: "State of Domicile" },
+  { domain: "Application", subEntity: "Location", label: "Country of Domicile" },
+  { domain: "Application", subEntity: "Location", label: "US Domestic vs International" },
+  { domain: "Application", subEntity: "Location", label: "Fronting Carrier" },
+  // Application — Policy / Slip
+  { domain: "Application", subEntity: "Policy / Slip", label: "Effective Date" },
+  { domain: "Application", subEntity: "Policy / Slip", label: "Expiry Date" },
+  { domain: "Application", subEntity: "Policy / Slip", label: "New Business vs Renewal" },
+  { domain: "Application", subEntity: "Policy / Slip", label: "Prior Policy Number (Renewals)" },
+  { domain: "Application", subEntity: "Policy / Slip", label: "Submission Received Date" },
+  // Application — System Reference
+  { domain: "Application", subEntity: "System Reference", label: "Submission Reference Number" },
+  // Coverage Request — Peril Group
+  { domain: "Coverage Request", subEntity: "Peril Group", label: "Line of Business" },
+  { domain: "Coverage Request", subEntity: "Peril Group", label: "Mandatory Endorsements" },
+  { domain: "Coverage Request", subEntity: "Peril Group", label: "Excluded Coverage" },
+  { domain: "Coverage Request", subEntity: "Peril Group", label: "Requested Perils" },
+  { domain: "Coverage Request", subEntity: "Peril Group", label: "NFIP Eligibility" },
+  { domain: "Coverage Request", subEntity: "Peril Group", label: "TRIA Election" },
+  { domain: "Coverage Request", subEntity: "Peril Group", label: "Boiler & Machinery" },
+  { domain: "Coverage Request", subEntity: "Peril Group", label: "Non-Admitted Provision" },
+  { domain: "Coverage Request", subEntity: "Peril Group", label: "Manuscript Requests" },
+  // Coverage Request — Coverage Term
+  { domain: "Coverage Request", subEntity: "Coverage Term", label: "Program Position" },
+  { domain: "Coverage Request", subEntity: "Coverage Term", label: "Requested Layer(s)" },
+  { domain: "Coverage Request", subEntity: "Coverage Term", label: "Requested Layer Limit ($)" },
+  { domain: "Coverage Request", subEntity: "Coverage Term", label: "Total Program Limit ($)" },
+  { domain: "Coverage Request", subEntity: "Coverage Term", label: "Attachment / Retention Point ($)" },
+  { domain: "Coverage Request", subEntity: "Coverage Term", label: "Layering Structure (combined)" },
+  { domain: "Coverage Request", subEntity: "Coverage Term", label: "AOP Deductible ($)" },
+  { domain: "Coverage Request", subEntity: "Coverage Term", label: "Named Windstorm Deductible" },
+  { domain: "Coverage Request", subEntity: "Coverage Term", label: "EQ Deductible" },
+  { domain: "Coverage Request", subEntity: "Coverage Term", label: "Flood Deductible (%)" },
+  { domain: "Coverage Request", subEntity: "Coverage Term", label: "Sublimits" },
+  { domain: "Coverage Request", subEntity: "Coverage Term", label: "Valuation Basis" },
+  // Primary Policy — Peril Group
+  { domain: "Primary Policy", subEntity: "Peril Group", label: "Lead Primary Policy Carrier" },
+  // Primary Policy — Coverage Term
+  { domain: "Primary Policy", subEntity: "Coverage Term", label: "Underlying Limits ($)" },
+  // Primary Policy — Policy / Slip
+  { domain: "Primary Policy", subEntity: "Policy / Slip", label: "Binder Reference Number" },
+  { domain: "Primary Policy", subEntity: "Policy / Slip", label: "Majesco Policy Number" },
+  { domain: "Primary Policy", subEntity: "Policy / Slip", label: "Per-Territory Policy Number" },
+  { domain: "Primary Policy", subEntity: "Policy / Slip", label: "Final Policy Number" },
+  // Primary Policy — Premium Transaction
+  { domain: "Primary Policy", subEntity: "Premium Transaction", label: "Layer Structure / Attachment Points" },
+  { domain: "Primary Policy", subEntity: "Premium Transaction", label: "Final Sold Premium" },
+  { domain: "Primary Policy", subEntity: "Premium Transaction", label: "Rate per $100 TIV" },
+  { domain: "Primary Policy", subEntity: "Premium Transaction", label: "Expiring Premium" },
+  // Loss History
+  { domain: "Loss History", subEntity: "Loss History", label: "Loss Ratio" },
+  { domain: "Loss History", subEntity: "Loss History", label: "Number of Claims" },
+  { domain: "Loss History", subEntity: "Loss History", label: "Largest Single Loss" },
+  { domain: "Loss History", subEntity: "Loss History", label: "Loss Run Years" },
+];
+
 /** Add one year to an MM/DD/YYYY date string — used to derive the expiry date. */
 function plusOneYear(date: string): string {
   const parts = date.split("/");
