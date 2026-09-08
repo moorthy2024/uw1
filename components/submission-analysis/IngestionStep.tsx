@@ -22,7 +22,7 @@ import {
 } from "../SubmissionTypes";
 import { type SubmissionIndexEntry } from "../CustomerTable";
 import { type CatalogField, type CatalogDocRef, type FieldKind, type DocType, type PdfPage, CRITICALITY_STYLE } from "./types";
-import { EXPECTED_DOCS, DOMAIN_ORDER } from "./mock-data";
+import { EXPECTED_DOCS, DOMAIN_ORDER, FIELD_CATALOG } from "./mock-data";
 import { useIngestionFields } from "./useSubmission";
 import { useDocumentPage } from "./useDocumentPage";
 import { useFieldStream } from "./useFieldStream";
@@ -1903,6 +1903,7 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
   const fields = rawFields ?? [];
 
   /* Four-level hierarchy: expected document → domain → entity/sub-entity → field */
+  const isMockSubmission = fields.some(f => f.doc === "Statement of Values" || f.doc === "Site Photos");
   const docsInOrder = EXPECTED_DOCS.filter(d => fields.some(f => f.doc === d));
   const domainsFor = (doc: string) => {
     const inOrder = DOMAIN_ORDER.filter(dom => fields.some(f => f.doc === doc && f.domain === dom));
@@ -2063,7 +2064,12 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
   const docsReceived = EXPECTED_DOCS.filter(d => extras.documents.find(x => x.name === d)?.received).length;
 
   const receivedDocNames = new Set(extras.documents.filter(d => d.received).map(d => d.name));
-  const extractedFields = fields.filter(f => receivedDocNames.has(f.doc));
+  // For real API: extracted = fields returned by API (fields.length), total = full catalog (60)
+  // For mock: extracted = fields from received docs, total = all fields
+  const extractedFields = isMockSubmission
+    ? fields.filter(f => receivedDocNames.has(f.doc))
+    : fields;
+  const catalogTotal = isMockSubmission ? fields.length : FIELD_CATALOG.length;
   const totalCritical = fields.filter(f => f.critical === "Yes").length;
   const extractedCritical = extractedFields.filter(f => f.critical === "Yes").length;
   const missingDocNames = EXPECTED_DOCS.filter(d => !extras.documents.find(x => x.name === d)?.received);
@@ -2087,8 +2093,8 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
           {[
             {
               label: "Fields Extracted",
-              value: `${extractedFields.length} / ${fields.length}`,
-              status: extractedFields.length === fields.length ? "good" : extractedFields.length >= fields.length * 0.8 ? "watch" : "alert",
+              value: `${extractedFields.length} / ${catalogTotal}`,
+              status: extractedFields.length === catalogTotal ? "good" : extractedFields.length >= catalogTotal * 0.8 ? "watch" : "alert",
             },
             {
               label: "Critical Fields",
