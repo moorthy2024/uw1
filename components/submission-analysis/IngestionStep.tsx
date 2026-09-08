@@ -2097,11 +2097,6 @@ export function IngestionStep({ onProceed }: { onProceed: () => void }) {
               status: extractedFields.length === catalogTotal ? "good" : extractedFields.length >= catalogTotal * 0.8 ? "watch" : "alert",
             },
             {
-              label: "Critical Fields",
-              value: `${extractedCritical} / ${totalCritical}`,
-              status: extractedCritical === totalCritical ? "good" : extractedCritical >= totalCritical * 0.8 ? "watch" : "alert",
-            },
-            {
               label: "Verified",
               value: `${totalVerified} (${pct}%)`,
               status: totalVerified === fields.length ? "good" : totalVerified > 0 ? "watch" : "alert",
@@ -2867,16 +2862,10 @@ function FollowUpModal({ broker, brokerageHouse, accountName, submissionId, miss
     ].join("\n") + disclaimer,
   };
 
-  const [tab, setTab] = useState<FollowUpTab>("information");
   const [bodies, setBodies] = useState<Record<FollowUpTab, string>>({ ...defaultBodies });
 
-  const TABS: { id: FollowUpTab; label: string; icon: typeof FileSearch }[] = [
-    { id: "information", label: "Missing Information",  icon: Info },
-    { id: "document",    label: "Missing Documents",    icon: FileSearch },
-  ];
-
   const handleOpenDraft = () => {
-    const url = `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(brokerEmail)}&subject=${encodeURIComponent(subjects[tab])}&body=${encodeURIComponent(bodies[tab])}`;
+    const url = `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(brokerEmail)}&subject=${encodeURIComponent(subjects["document"])}&body=${encodeURIComponent(bodies["document"])}`;
     window.open(url, "_blank", "noopener,noreferrer");
     toast.success(`Draft opened — ${broker}`);
     onClose();
@@ -2901,21 +2890,6 @@ function FollowUpModal({ broker, brokerageHouse, accountName, submissionId, miss
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-[#E8E6E1] bg-[#FAFAF9] flex-shrink-0">
-          {TABS.map(t => {
-            const Icon = t.icon;
-            const active = tab === t.id;
-            return (
-              <button key={t.id} onClick={() => setTab(t.id)}
-                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-[11px] border-b-2 transition-colors ${active ? "border-[#0076BC] text-[#0076BC] bg-white" : "border-transparent text-[#6B7280] hover:text-[#2D2D2D] hover:bg-white"}`}
-                style={{ fontWeight: active ? 700 : 500 }}>
-                <Icon className="w-3 h-3 flex-shrink-0" />
-                {t.label}
-              </button>
-            );
-          })}
-        </div>
 
         {/* Recipient + Subject */}
         <div className="px-4 pt-3 pb-2 flex-shrink-0 border-b border-[#F0EFEC] space-y-2">
@@ -2927,16 +2901,15 @@ function FollowUpModal({ broker, brokerageHouse, accountName, submissionId, miss
           </div>
           <div className="flex items-start gap-2">
             <span className="text-[10px] uppercase tracking-wide text-[#9B9B98] w-8 flex-shrink-0 mt-1" style={{ fontWeight: 700 }}>Re</span>
-            <span className="text-[11px] text-[#4B5563]">{subjects[tab]}</span>
+            <span className="text-[11px] text-[#4B5563]">{subjects["document"]}</span>
           </div>
         </div>
 
         {/* Editable body */}
         <div className="flex-1 overflow-y-auto px-4 py-3">
           <textarea
-            key={tab}
-            value={bodies[tab]}
-            onChange={e => setBodies(prev => ({ ...prev, [tab]: e.target.value }))}
+            value={bodies["document"]}
+            onChange={e => setBodies(prev => ({ ...prev, document: e.target.value }))}
             className="w-full rounded-lg border border-[#E8E6E1] bg-[#FAFAF9] px-3 py-2.5 text-[11px] text-[#374151] leading-relaxed resize-none outline-none focus:border-[#0076BC] focus:ring-1 focus:ring-[#0076BC]/20 transition-colors font-mono"
             rows={14}
             spellCheck
